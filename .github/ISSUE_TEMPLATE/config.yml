@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and Ideas
+    url: https://github.com/regfish/certbro/discussions
+    about: Ask questions, discuss integrations, and share feedback in GitHub Discussions.
+  - name: Security Reports
+    url: https://github.com/regfish/certbro/security
+    about: Please use private vulnerability reporting for security issues.

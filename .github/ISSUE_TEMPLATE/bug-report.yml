@@ -1,0 +1,86 @@
+name: Bug report
+description: Report a reproducible problem in certbro
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please provide enough detail to reproduce the problem.
+
+        Do not include API keys, private keys, CSRs with private material, or other secrets.
+  - type: input
+    id: version
+    attributes:
+      label: certbro version
+      description: Output of `certbro version`
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Linux distribution
+      description: Distribution and version
+      placeholder: Ubuntu 24.04
+    validations:
+      required: true
+  - type: input
+    id: webserver
+    attributes:
+      label: Web server
+      description: Web server and version, if relevant
+      placeholder: nginx 1.26.1
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - issue
+        - renew
+        - reissue
+        - import
+        - install
+        - deploy or reload
+        - DNS validation
+        - documentation
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: Exact command that was executed
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output or logs
+      description: Redact secrets before posting
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+    validations:
+      required: false

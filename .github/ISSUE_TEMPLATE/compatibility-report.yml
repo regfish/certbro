@@ -1,0 +1,60 @@
+name: Compatibility report
+description: Report a result for a Linux, web server, or deployment environment
+title: "[Compatibility]: "
+labels:
+  - compatibility
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to report successful or problematic behavior in a specific environment.
+  - type: input
+    id: version
+    attributes:
+      label: certbro version
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Linux distribution
+      placeholder: Debian 13
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment type
+      options:
+        - nginx
+        - apache
+        - caddy
+        - systemd
+        - container
+        - virtual machine
+        - bare metal
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario
+      description: What did you test
+      placeholder: issue, renew, import, issue-pair, reload, unattended renewals
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Result
+      description: What worked, what failed, and any important observations
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional notes
+    validations:
+      required: false

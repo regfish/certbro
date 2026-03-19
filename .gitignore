@@ -1,0 +1,11 @@
+.DS_Store
+.gocache/
+dist/
+certbro
+scripts/publish-public.sh
+scripts/release-current.sh
+scripts/new-alias-deploy.sh
+*.log
+*.pem
+*.key
+*.crt
