@@ -18,14 +18,16 @@ If `--validity-days` is omitted, `certbro` uses a date-aware default aligned wit
 
 ## Validity Schedule
 
-`certbro` follows the CA/B Forum schedule for publicly trusted TLS certificate lifetimes.
+`certbro` follows the CA/B Forum schedule for publicly trusted TLS certificate lifetimes and starts using the upcoming lower default one day earlier as a safety margin.
 
-- Certificates issued before `2026-03-15`: maximum `398` days, default `397`
-- Certificates issued on or after `2026-03-15` and before `2027-03-15`: maximum `200` days, default `199`
-- Certificates issued on or after `2027-03-15` and before `2029-03-15`: maximum `100` days, default `99`
-- Certificates issued on or after `2029-03-15`: maximum `47` days, default `46`
+- Certificates issued before `2026-03-14`: maximum `398` days, default `397`
+- Certificates issued on or after `2026-03-14` and before `2027-03-14`: maximum `200` days, default `199`
+- Certificates issued on or after `2027-03-14` and before `2029-03-14`: maximum `100` days, default `99`
+- Certificates issued on or after `2029-03-14`: maximum `47` days, default `46`
 
 If you pass `--validity-days`, `certbro` validates the requested value against the active limit before placing the order.
+
+The requested lifetime must also be greater than both `--renew-before-days` and `--reissue-lead-days`. This prevents immediate follow-up renewals or reissues right after issuance.
 
 ## Subject Alternative Names
 

@@ -12,6 +12,7 @@ This directory contains the English operational guides for `certbro`.
 ## Certificate Workflows
 
 - [Issuing Certificates](issuing-certificates.md): single-domain, SAN, product selection, key algorithms, validity schedule, and quiet mode
+- [Validity Management](validity-management.md): manual lifetime changes and automatic schedule-aware adjustment of stored values
 - [Dual RSA and ECDSA Certificates](dual-certificates.md): operate parallel certificate variants for modern and legacy TLS clients
 - [Renewals and Replacement](renewals-and-replacement.md): normal renewals, forced renewals, validity overrides, future CA/B Forum limits, and fast replacement
 - [Import Existing Certificates](import-existing-certificates.md): bring certificates ordered in the regfish UI under `certbro` management

@@ -26,6 +26,7 @@ func TestPlanRenewal(t *testing.T) {
 	nearValidUntil := now.Add(3 * 24 * time.Hour)
 	equalContractEnd := nearValidUntil
 	longContractEnd := now.Add(120 * 24 * time.Hour)
+	recentIssuedAt := now.Add(-24 * time.Hour)
 
 	tests := []struct {
 		name    string
@@ -150,6 +151,41 @@ func TestPlanRenewal(t *testing.T) {
 				ContractValidUntil: &equalContractEnd,
 			},
 			want: renewalNewOrder,
+		},
+		{
+			name: "recently issued certificate stays on cooldown",
+			managed: config.ManagedCertificate{
+				ReissueLeadDays: 7,
+				RenewBeforeDays: 7,
+				LastIssuedAt:    &recentIssuedAt,
+			},
+			remote: &api.TLSCertificate{
+				ID:                 "7K9QW3M2ZT8HJ",
+				RenewalSupported:   true,
+				Status:             "issued",
+				ReissueSupported:   true,
+				ValidUntil:         &nearValidUntil,
+				ContractValidUntil: &equalContractEnd,
+			},
+			want: renewalSkip,
+		},
+		{
+			name: "force bypasses recent issuance cooldown",
+			managed: config.ManagedCertificate{
+				ReissueLeadDays: 7,
+				RenewBeforeDays: 7,
+				LastIssuedAt:    &recentIssuedAt,
+			},
+			remote: &api.TLSCertificate{
+				ID:                 "7K9QW3M2ZT8HJ",
+				RenewalSupported:   true,
+				Status:             "issued",
+				ReissueSupported:   true,
+				ValidUntil:         &nearValidUntil,
+				ContractValidUntil: &equalContractEnd,
+			},
+			force: true,
+			want:  renewalOrder,
 		},
 	}
 
@@ -451,8 +487,8 @@ func TestRenewOneAppliesValidityOverrideToRenewalOrder(t *testing.T) {
 		OutputDir:       outputDir,
 		CertificateID:   "OLDCERT",
 		ValidityDays:    199,
-		RenewBeforeDays: 7,
-		ReissueLeadDays: 7,
+		RenewBeforeDays: 2,
+		ReissueLeadDays: 2,
 	}, true, 3, time.Minute, time.Millisecond)
 	if err != nil {
 		t.Fatalf("renewOne() error = %v", err)

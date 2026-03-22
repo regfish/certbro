@@ -34,6 +34,8 @@ export HOST_FQDN='example.certbro.com'
 export CERTBRO_NAME='example-certbro-com'
 export CERTBRO_PRODUCT='RapidSSL'
 export CERTBRO_VALIDITY_DAYS='3'
+export CERTBRO_RENEW_BEFORE_DAYS='2'
+export CERTBRO_REISSUE_LEAD_DAYS='2'
 export WEBROOT="/var/www/${HOST_FQDN}/html"
 export CERTBRO_DIR="/etc/certbro/${HOST_FQDN}"
 export CERTBRO_STATE_FILE='/etc/certbro/state.json'
@@ -230,6 +232,8 @@ sudo certbro --state-file "${CERTBRO_STATE_FILE}" issue \
   --common-name "${HOST_FQDN}" \
   --product "${CERTBRO_PRODUCT}" \
   --validity-days "${CERTBRO_VALIDITY_DAYS}" \
+  --renew-before-days "${CERTBRO_RENEW_BEFORE_DAYS}" \
+  --reissue-lead-days "${CERTBRO_REISSUE_LEAD_DAYS}" \
   --webserver nginx \
   --webserver-config /etc/nginx/nginx.conf \
   --key-type ecdsa \
@@ -337,6 +341,8 @@ sudo certbro --state-file "${CERTBRO_STATE_FILE}" renew \
   --force \
   --validity-days "${CERTBRO_VALIDITY_DAYS}"
 ```
+
+The `3` day example only works because the managed lead times were set to `2` days. `certbro` rejects lifetimes that are not greater than the renewal lead times.
 
 Use `--force` only when you explicitly want to trigger a real renewal or reissue flow for testing.
 

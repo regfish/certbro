@@ -51,7 +51,7 @@ sudo certbro --state-file /etc/certbro/state.json issue \
   --output-dir /etc/certbro/example.com
 ```
 
-If `--validity-days` is omitted, `certbro` chooses a date-aware default aligned with the CA/B Forum schedule. The current defaults are `199` days from `2026-03-15`, `99` days from `2027-03-15`, and `46` days from `2029-03-15`.
+If `--validity-days` is omitted, `certbro` chooses a date-aware default with a one-day safety margin before each CA/B Forum transition. The current defaults are `199` days from `2026-03-14`, `99` days from `2027-03-14`, and `46` days from `2029-03-14`.
 
 After a successful issue, `certbro` writes:
 

@@ -18,14 +18,16 @@ Wenn `--validity-days` nicht gesetzt ist, nutzt `certbro` einen datumsabhängige
 
 ## Laufzeit-Zeitplan
 
-`certbro` folgt dem CA/B-Forum-Zeitplan für öffentlich vertrauenswürdige TLS-Zertifikate.
+`certbro` folgt dem CA/B-Forum-Zeitplan für öffentlich vertrauenswürdige TLS-Zertifikate und beginnt aus Sicherheitsgründen jeweils einen Tag früher mit dem niedrigeren Default.
 
-- Vor `2026-03-15` ausgestellte Zertifikate: maximal `398` Tage, Default `397`
-- Ab `2026-03-15` und vor `2027-03-15`: maximal `200` Tage, Default `199`
-- Ab `2027-03-15` und vor `2029-03-15`: maximal `100` Tage, Default `99`
-- Ab `2029-03-15`: maximal `47` Tage, Default `46`
+- Vor `2026-03-14` ausgestellte Zertifikate: maximal `398` Tage, Default `397`
+- Ab `2026-03-14` und vor `2027-03-14`: maximal `200` Tage, Default `199`
+- Ab `2027-03-14` und vor `2029-03-14`: maximal `100` Tage, Default `99`
+- Ab `2029-03-14`: maximal `47` Tage, Default `46`
 
 Wenn `--validity-days` gesetzt wird, validiert `certbro` den Wert vor der Bestellung gegen das aktuell gültige Limit.
+
+Die gewünschte Laufzeit muss außerdem größer sein als `--renew-before-days` und `--reissue-lead-days`. So verhindert `certbro`, dass direkt nach der Ausstellung sofort wieder ein Renewal oder Reissue fällig wird.
 
 ## Subject Alternative Names
 

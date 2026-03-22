@@ -36,24 +36,29 @@ const (
 )
 
 var validitySchedule = []struct {
-	issuedOnOrAfter time.Time
-	maxValidityDays int
+	officialOnOrAfter time.Time
+	certbroOnOrAfter  time.Time
+	maxValidityDays   int
 }{
 	{
-		issuedOnOrAfter: time.Date(2029, 3, 15, 0, 0, 0, 0, time.UTC),
-		maxValidityDays: 47,
+		officialOnOrAfter: time.Date(2029, 3, 15, 0, 0, 0, 0, time.UTC),
+		certbroOnOrAfter:  time.Date(2029, 3, 14, 0, 0, 0, 0, time.UTC),
+		maxValidityDays:   47,
 	},
 	{
-		issuedOnOrAfter: time.Date(2027, 3, 15, 0, 0, 0, 0, time.UTC),
-		maxValidityDays: 100,
+		officialOnOrAfter: time.Date(2027, 3, 15, 0, 0, 0, 0, time.UTC),
+		certbroOnOrAfter:  time.Date(2027, 3, 14, 0, 0, 0, 0, time.UTC),
+		maxValidityDays:   100,
 	},
 	{
-		issuedOnOrAfter: time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
-		maxValidityDays: 200,
+		officialOnOrAfter: time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+		certbroOnOrAfter:  time.Date(2026, 3, 14, 0, 0, 0, 0, time.UTC),
+		maxValidityDays:   200,
 	},
 	{
-		issuedOnOrAfter: time.Time{},
-		maxValidityDays: 398,
+		officialOnOrAfter: time.Time{},
+		certbroOnOrAfter:  time.Time{},
+		maxValidityDays:   398,
 	},
 }
 
@@ -72,6 +77,18 @@ func DefaultValidityDaysAt(now time.Time) int {
 	return maxValidityDays - 1
 }
 
+// NormalizeStoredValidityDaysAt adjusts an already stored validity to the current schedule-aware default when it exceeds today's limit.
+func NormalizeStoredValidityDaysAt(validityDays int, now time.Time) (effective int, adjusted bool, officialEffectiveFrom time.Time) {
+	officialEffectiveFrom, maxValidityDays := activeValiditySchedule(now)
+	if validityDays <= 0 {
+		return DefaultValidityDaysAt(now), true, officialEffectiveFrom
+	}
+	if validityDays > maxValidityDays {
+		return DefaultValidityDaysAt(now), true, officialEffectiveFrom
+	}
+	return validityDays, false, officialEffectiveFrom
+}
+
 // ValidateValidityDaysAt checks whether a requested validity is positive and within the active CA/B Forum limit.
 func ValidateValidityDaysAt(validityDays int, now time.Time) error {
 	if validityDays <= 0 {
@@ -85,11 +102,49 @@ func ValidateValidityDaysAt(validityDays int, now time.Time) error {
 	return nil
 }
 
+// ValidateRenewalTiming ensures the managed renewal windows cannot cause immediate follow-up renewals or reissues.
+func ValidateRenewalTiming(validityDays, renewBeforeDays, reissueLeadDays int) error {
+	if renewBeforeDays <= 0 {
+		return fmt.Errorf("--renew-before-days must be greater than zero")
+	}
+	if reissueLeadDays <= 0 {
+		return fmt.Errorf("--reissue-lead-days must be greater than zero")
+	}
+	if validityDays <= renewBeforeDays {
+		return fmt.Errorf("--validity-days must be greater than --renew-before-days to avoid immediate renewal loops")
+	}
+	if validityDays <= reissueLeadDays {
+		return fmt.Errorf("--validity-days must be greater than --reissue-lead-days to avoid immediate reissue loops")
+	}
+	return nil
+}
+
+// NormalizeStoredRenewalTiming reduces stored renewal windows that would otherwise trigger immediate follow-up renewals.
+func NormalizeStoredRenewalTiming(validityDays, renewBeforeDays, reissueLeadDays int) (effectiveRenewBeforeDays, effectiveReissueLeadDays int, adjusted bool, err error) {
+	if validityDays <= 1 {
+		return 0, 0, false, fmt.Errorf("stored validity_days %d is too short for managed renewals; choose at least 2 days", validityDays)
+	}
+
+	effectiveRenewBeforeDays = renewBeforeDays
+	if effectiveRenewBeforeDays <= 0 || effectiveRenewBeforeDays >= validityDays {
+		effectiveRenewBeforeDays = validityDays - 1
+		adjusted = true
+	}
+
+	effectiveReissueLeadDays = reissueLeadDays
+	if effectiveReissueLeadDays <= 0 || effectiveReissueLeadDays >= validityDays {
+		effectiveReissueLeadDays = validityDays - 1
+		adjusted = true
+	}
+
+	return effectiveRenewBeforeDays, effectiveReissueLeadDays, adjusted, nil
+}
+
 func activeValiditySchedule(now time.Time) (time.Time, int) {
 	now = now.UTC()
 	for _, step := range validitySchedule {
-		if step.issuedOnOrAfter.IsZero() || !now.Before(step.issuedOnOrAfter) {
-			return step.issuedOnOrAfter, step.maxValidityDays
+		if step.certbroOnOrAfter.IsZero() || !now.Before(step.certbroOnOrAfter) {
+			return step.officialOnOrAfter, step.maxValidityDays
 		}
 	}
 	return time.Time{}, 398

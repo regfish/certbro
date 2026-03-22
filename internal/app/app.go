@@ -259,6 +259,9 @@ func (a *App) runUpdate(args []string, root rootOptions, store *config.Store) er
 	if managed == nil {
 		return fmt.Errorf("managed certificate %q not found", name)
 	}
+	if err := config.ValidateRenewalTiming(validityDays, managed.RenewBeforeDays, managed.ReissueLeadDays); err != nil {
+		return err
+	}
 
 	updated := *managed
 	updated.ValidityDays = validityDays
@@ -331,6 +334,9 @@ func (a *App) runIssue(ctx context.Context, args []string, root rootOptions, sto
 		return fmt.Errorf("--output-dir is required")
 	}
 	if err := config.ValidateValidityDaysAt(validityDays, time.Now().UTC()); err != nil {
+		return err
+	}
+	if err := config.ValidateRenewalTiming(validityDays, renewBeforeDays, reissueLeadDays); err != nil {
 		return err
 	}
 	if err := deploy.ValidateWebserverIntegration(deploy.WebserverIntegration{
@@ -439,6 +445,9 @@ func (a *App) runIssuePair(ctx context.Context, args []string, root rootOptions,
 		return fmt.Errorf("--output-dir-base is required")
 	}
 	if err := config.ValidateValidityDaysAt(validityDays, time.Now().UTC()); err != nil {
+		return err
+	}
+	if err := config.ValidateRenewalTiming(validityDays, renewBeforeDays, reissueLeadDays); err != nil {
 		return err
 	}
 	integration := deploy.WebserverIntegration{

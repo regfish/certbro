@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -107,26 +108,26 @@ func TestValidityScheduleFollowsCABForumTimeline(t *testing.T) {
 		wantDefaultDays     int
 	}{
 		{
-			name:                "before 2026 reduction",
-			now:                 time.Date(2026, 3, 14, 23, 59, 59, 0, time.UTC),
+			name:                "before certbro safety switch to 200 day era",
+			now:                 time.Date(2026, 3, 13, 23, 59, 59, 0, time.UTC),
 			wantMaxValidityDays: 398,
 			wantDefaultDays:     397,
 		},
 		{
-			name:                "200 day era",
-			now:                 time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC),
+			name:                "200 day era starts one day early in certbro",
+			now:                 time.Date(2026, 3, 14, 0, 0, 0, 0, time.UTC),
 			wantMaxValidityDays: 200,
 			wantDefaultDays:     199,
 		},
 		{
-			name:                "100 day era",
-			now:                 time.Date(2027, 3, 15, 0, 0, 0, 0, time.UTC),
+			name:                "100 day era starts one day early in certbro",
+			now:                 time.Date(2027, 3, 14, 0, 0, 0, 0, time.UTC),
 			wantMaxValidityDays: 100,
 			wantDefaultDays:     99,
 		},
 		{
-			name:                "47 day era",
-			now:                 time.Date(2029, 3, 15, 0, 0, 0, 0, time.UTC),
+			name:                "47 day era starts one day early in certbro",
+			now:                 time.Date(2029, 3, 14, 0, 0, 0, 0, time.UTC),
 			wantMaxValidityDays: 47,
 			wantDefaultDays:     46,
 		},
@@ -160,5 +161,51 @@ func TestValidateValidityDaysAtRejectsValuesAboveCurrentLimit(t *testing.T) {
 	}
 	if got := err.Error(); got == "" || got == "--validity-days must be greater than zero" {
 		t.Fatalf("ValidateValidityDaysAt() error = %q, want limit error", got)
+	}
+}
+
+func TestNormalizeStoredValidityDaysAtAdjustsLegacyValueToScheduleDefault(t *testing.T) {
+	effective, adjusted, officialEffectiveFrom := NormalizeStoredValidityDaysAt(199, time.Date(2027, 3, 14, 0, 0, 0, 0, time.UTC))
+	if !adjusted {
+		t.Fatal("adjusted = false, want true")
+	}
+	if effective != 99 {
+		t.Fatalf("effective = %d, want 99", effective)
+	}
+	if !officialEffectiveFrom.Equal(time.Date(2027, 3, 15, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("officialEffectiveFrom = %v, want 2027-03-15", officialEffectiveFrom)
+	}
+}
+
+func TestValidateRenewalTimingRejectsImmediateRenewalLoopConfiguration(t *testing.T) {
+	err := ValidateRenewalTiming(3, 7, 2)
+	if err == nil {
+		t.Fatal("ValidateRenewalTiming() error = nil, want error")
+	}
+	if got := err.Error(); !strings.Contains(got, "--renew-before-days") {
+		t.Fatalf("ValidateRenewalTiming() error = %q, want renew-before-days error", got)
+	}
+}
+
+func TestValidateRenewalTimingRejectsImmediateReissueLoopConfiguration(t *testing.T) {
+	err := ValidateRenewalTiming(3, 2, 7)
+	if err == nil {
+		t.Fatal("ValidateRenewalTiming() error = nil, want error")
+	}
+	if got := err.Error(); !strings.Contains(got, "--reissue-lead-days") {
+		t.Fatalf("ValidateRenewalTiming() error = %q, want reissue-lead-days error", got)
+	}
+}
+
+func TestNormalizeStoredRenewalTimingAdjustsLegacyLeadDays(t *testing.T) {
+	renewBeforeDays, reissueLeadDays, adjusted, err := NormalizeStoredRenewalTiming(3, 7, 7)
+	if err != nil {
+		t.Fatalf("NormalizeStoredRenewalTiming() error = %v", err)
+	}
+	if !adjusted {
+		t.Fatal("adjusted = false, want true")
+	}
+	if renewBeforeDays != 2 || reissueLeadDays != 2 {
+		t.Fatalf("effective lead days = %d/%d, want 2/2", renewBeforeDays, reissueLeadDays)
 	}
 }

@@ -51,6 +51,8 @@ const (
 
 const certbroManagedDNSAnnotationPrefix = "managed by certbro"
 
+const renewalCooldownAfterIssue = 48 * time.Hour
+
 // NewManager constructs a Manager bound to one API client and one local store.
 func NewManager(client *api.Client, store *config.Store, storePath string) *Manager {
 	return &Manager{
@@ -119,6 +121,9 @@ func (m *Manager) Import(ctx context.Context, managed config.ManagedCertificate,
 	}
 	if strings.TrimSpace(managed.Name) == "" {
 		managed.Name = strings.TrimSpace(strings.ToLower(remote.CommonName))
+	}
+	if err := config.ValidateRenewalTiming(managed.ValidityDays, managed.RenewBeforeDays, managed.ReissueLeadDays); err != nil {
+		return nil, err
 	}
 
 	if existing, idx := m.Store.FindManagedCertificate(managed.Name); existing != nil && m.Store.ManagedCertificates[idx].CertificateID != managed.CertificateID {
@@ -237,10 +242,44 @@ func (m *Manager) renewOne(ctx context.Context, managed *config.ManagedCertifica
 		}
 	}
 
-	action := planRenewal(now, *managed, remote, force)
+	action := renewalSkip
+	if managed.PendingAction != "" || (remote != nil && (remote.Status == "pending" || (remote.Reissue != nil && isActiveReissue(remote.Reissue.Status)))) {
+		action = renewalCompletePending
+	} else {
+		storedValidityDays := managed.ValidityDays
+		if validityDaysOverride == 0 {
+			effectiveValidityDays, adjusted, officialEffectiveFrom := config.NormalizeStoredValidityDaysAt(managed.ValidityDays, now)
+			if adjusted {
+				managed.ValidityDays = effectiveValidityDays
+				m.progress().Stepf("%s: stored validity_days %d exceeds the current schedule-aware limit; using %d days for the CA/B Forum limit effective %s", managed.Name, storedValidityDays, effectiveValidityDays, officialEffectiveFrom.Format("2006-01-02"))
+			}
+		}
+
+		originalRenewBeforeDays := managed.RenewBeforeDays
+		originalReissueLeadDays := managed.ReissueLeadDays
+		effectiveRenewBeforeDays, effectiveReissueLeadDays, adjustedTiming, err := config.NormalizeStoredRenewalTiming(managed.ValidityDays, managed.RenewBeforeDays, managed.ReissueLeadDays)
+		if err != nil {
+			return nil, err
+		}
+		if adjustedTiming {
+			managed.RenewBeforeDays = effectiveRenewBeforeDays
+			managed.ReissueLeadDays = effectiveReissueLeadDays
+			if managed.RenewBeforeDays != originalRenewBeforeDays {
+				m.progress().Stepf("%s: stored renew_before_days %d is too large for validity_days %d; using %d instead", managed.Name, originalRenewBeforeDays, managed.ValidityDays, managed.RenewBeforeDays)
+			}
+			if managed.ReissueLeadDays != originalReissueLeadDays {
+				m.progress().Stepf("%s: stored reissue_lead_days %d is too large for validity_days %d; using %d instead", managed.Name, originalReissueLeadDays, managed.ValidityDays, managed.ReissueLeadDays)
+			}
+		}
+
+		action = planRenewal(now, *managed, remote, force)
+	}
 	if validityDaysOverride > 0 {
 		switch action {
 		case renewalOrder, renewalNewOrder:
+			if err := config.ValidateRenewalTiming(validityDaysOverride, managed.RenewBeforeDays, managed.ReissueLeadDays); err != nil {
+				return nil, err
+			}
 			managed.ValidityDays = validityDaysOverride
 		case renewalReissue:
 			return nil, fmt.Errorf("--validity-days cannot be applied to a reissue; reissues inherit the existing contract")
@@ -312,6 +351,9 @@ func (m *Manager) renewOne(ctx context.Context, managed *config.ManagedCertifica
 func (m *Manager) startOrder(ctx context.Context, managed *config.ManagedCertificate, waitTimeout, waitInterval time.Duration, action, renewalOfCertificateID string) (*OperationResult, error) {
 	managed.ApplyDefaults()
 	if err := config.ValidateValidityDaysAt(managed.ValidityDays, time.Now().UTC()); err != nil {
+		return nil, err
+	}
+	if err := config.ValidateRenewalTiming(managed.ValidityDays, managed.RenewBeforeDays, managed.ReissueLeadDays); err != nil {
 		return nil, err
 	}
 
@@ -865,10 +907,16 @@ func planRenewal(now time.Time, managed config.ManagedCertificate, remote *api.T
 
 	validUntil := pickTime(remote.ValidUntil, managed.ValidUntil)
 	contractValidUntil := pickTime(remote.ContractValidUntil, managed.ContractValidUntil)
+	validFrom := pickTime(remote.ValidFrom, managed.ValidFrom)
+	issuedAt := pickTime(managed.LastIssuedAt, validFrom)
 	preferReissue := shouldPreferReissue(remote, validUntil, contractValidUntil)
 	leadDays := managed.RenewBeforeDays
 	if preferReissue {
 		leadDays = managed.ReissueLeadDays
+	}
+
+	if !force && withinRenewalCooldown(now, issuedAt, renewalCooldownAfterIssue) {
+		return renewalSkip
 	}
 
 	if !force && !dueForRenewal(now, validUntil, leadDays) {
@@ -895,6 +943,13 @@ func dueForRenewal(now time.Time, validUntil *time.Time, leadDays int) bool {
 		return true
 	}
 	return !validUntil.After(now.Add(time.Duration(leadDays) * 24 * time.Hour))
+}
+
+func withinRenewalCooldown(now time.Time, issuedAt *time.Time, cooldown time.Duration) bool {
+	if issuedAt == nil || cooldown <= 0 {
+		return false
+	}
+	return now.Before(issuedAt.Add(cooldown))
 }
 
 func shouldPreferReissue(remote *api.TLSCertificate, validUntil, contractValidUntil *time.Time) bool {

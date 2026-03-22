@@ -12,6 +12,7 @@ Dieses Verzeichnis enthält die deutschsprachigen Betriebs- und Nutzungshinweise
 ## Zertifikats-Workflows
 
 - [Zertifikate bestellen](issuing-certificates.md): Single-Domain, SANs, Produktauswahl, Key-Algorithmen, Laufzeitplan und leise Ausgabe
+- [Laufzeitverwaltung](validity-management.md): gespeicherte Laufzeiten manuell ändern und automatisch an künftige Limits anpassen
 - [Parallele RSA- und ECDSA-Zertifikate](dual-certificates.md): gleichzeitiger Betrieb für moderne und ältere TLS-Clients
 - [Renewals und Ersatz](renewals-and-replacement.md): reguläre Renewals, erzwungene Renewals, Laufzeit-Overrides, künftige CA/B-Forum-Limits und schneller Ersatz
 - [Bestehende Zertifikate importieren](import-existing-certificates.md): Zertifikate aus der regfish UI unter `certbro`-Verwaltung übernehmen

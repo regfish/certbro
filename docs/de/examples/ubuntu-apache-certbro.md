@@ -35,6 +35,8 @@ export HOST_FQDN='example.certbro.com'
 export CERTBRO_NAME='example-certbro-com'
 export CERTBRO_PRODUCT='RapidSSL'
 export CERTBRO_VALIDITY_DAYS='3'
+export CERTBRO_RENEW_BEFORE_DAYS='2'
+export CERTBRO_REISSUE_LEAD_DAYS='2'
 export WEBROOT="/var/www/${HOST_FQDN}/html"
 export CERTBRO_DIR="/etc/certbro/${HOST_FQDN}"
 export CERTBRO_STATE_FILE='/etc/certbro/state.json'
@@ -222,6 +224,8 @@ sudo certbro --state-file "${CERTBRO_STATE_FILE}" issue \
   --common-name "${HOST_FQDN}" \
   --product "${CERTBRO_PRODUCT}" \
   --validity-days "${CERTBRO_VALIDITY_DAYS}" \
+  --renew-before-days "${CERTBRO_RENEW_BEFORE_DAYS}" \
+  --reissue-lead-days "${CERTBRO_REISSUE_LEAD_DAYS}" \
   --webserver apache \
   --output-dir "${CERTBRO_DIR}"
 ```
@@ -320,6 +324,8 @@ sudo certbro --state-file "${CERTBRO_STATE_FILE}" renew \
   --force \
   --validity-days "${CERTBRO_VALIDITY_DAYS}"
 ```
+
+Das `3`-Tage-Beispiel funktioniert nur, weil die gespeicherten Lead-Tage auf `2` gesetzt wurden. `certbro` lehnt Laufzeiten ab, die nicht größer sind als die Renewal-Lead-Tage.
 
 `--force` nur verwenden, wenn bewusst ein echter Renewal- oder Reissue-Flow für Tests ausgelöst werden soll.
 

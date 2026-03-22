@@ -83,9 +83,9 @@ sudo certbro --state-file /etc/certbro/state.json install \
 - Dual RSA and ECDSA deployment: use `certbro issue-pair`
 - Existing regfish orders: import by `certificate_id`
 - Immediate replacement: `certbro renew --name example-com --force`
-- One-off renewal lifetime override: `certbro renew --name example-com --force --validity-days 3`
+- One-off renewal lifetime override: `certbro renew --name example-com --force --validity-days 30`
 - Pending issuance after a timeout: rerun `certbro renew --name example-com` to resume monitoring the existing request
-- If `--validity-days` is omitted, `certbro` uses a date-aware default aligned with the CA/B Forum validity schedule: `199` days from 2026-03-15, `99` days from 2027-03-15, and `46` days from 2029-03-15
+- If `--validity-days` is omitted, `certbro` uses a date-aware default with a one-day safety margin before each CA/B Forum transition: `199` days from 2026-03-14, `99` days from 2027-03-14, and `46` days from 2029-03-14
 - Quiet output for automation: add `--quiet` to `issue` or `renew`
 
 ## Documentation

@@ -92,6 +92,38 @@ func TestRunUpdateRejectsValidityDaysAboveCurrentLimit(t *testing.T) {
 	}
 }
 
+func TestRunUpdateRejectsValidityDaysNotGreaterThanRenewBeforeDays(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "state.json")
+	outputDir := filepath.Join(root, "example.com")
+
+	store := &config.Store{
+		Version: config.CurrentVersion,
+		ManagedCertificates: []config.ManagedCertificate{
+			{
+				Name:            "example-com",
+				CommonName:      "example.com",
+				OutputDir:       outputDir,
+				ValidityDays:    30,
+				RenewBeforeDays: 7,
+				ReissueLeadDays: 7,
+			},
+		},
+	}
+	if err := config.Save(statePath, store); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	app := &App{}
+	err := app.runUpdate([]string{"--name", "example-com", "--validity-days", "3"}, rootOptions{StateFile: statePath}, store)
+	if err == nil {
+		t.Fatal("runUpdate() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "--renew-before-days") {
+		t.Fatalf("runUpdate() error = %v, want renewal-timing error", err)
+	}
+}
+
 func TestBuildIssuePairManagedCertificates(t *testing.T) {
 	rsaManaged, ecdsaManaged := buildIssuePairManagedCertificates(issuePairOptions{
 		NameBase:        "example-com",
@@ -124,6 +156,23 @@ func TestBuildIssuePairManagedCertificates(t *testing.T) {
 	}
 	if rsaManaged.Webserver != "nginx" || ecdsaManaged.WebserverConfig != "/etc/nginx/nginx.conf" {
 		t.Fatalf("webserver integration not propagated: %#v %#v", rsaManaged, ecdsaManaged)
+	}
+}
+
+func TestRunIssueRejectsValidityDaysNotGreaterThanRenewBeforeDays(t *testing.T) {
+	app := &App{}
+	err := app.runIssue(context.Background(), []string{
+		"--common-name", "example.com",
+		"--output-dir", t.TempDir(),
+		"--validity-days", "3",
+		"--renew-before-days", "7",
+		"--reissue-lead-days", "2",
+	}, rootOptions{StateFile: filepath.Join(t.TempDir(), "state.json")}, &config.Store{Version: config.CurrentVersion})
+	if err == nil {
+		t.Fatal("runIssue() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "--renew-before-days") {
+		t.Fatalf("runIssue() error = %v, want renewal-timing error", err)
 	}
 }
 

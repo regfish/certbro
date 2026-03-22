@@ -51,7 +51,7 @@ sudo certbro --state-file /etc/certbro/state.json issue \
   --output-dir /etc/certbro/example.com
 ```
 
-Wenn `--validity-days` nicht gesetzt ist, wählt `certbro` automatisch einen datumsabhängigen Default gemäß CA/B-Forum-Zeitplan. Die aktuellen Defaults sind `199` Tage ab `2026-03-15`, `99` Tage ab `2027-03-15` und `46` Tage ab `2029-03-15`.
+Wenn `--validity-days` nicht gesetzt ist, wählt `certbro` automatisch einen datumsabhängigen Default mit einem Sicherheitspuffer von einem Tag vor jedem CA/B-Forum-Stichtag. Die aktuellen Defaults sind `199` Tage ab `2026-03-14`, `99` Tage ab `2027-03-14` und `46` Tage ab `2029-03-14`.
 
 Nach erfolgreicher Bestellung schreibt `certbro` unter anderem:
 

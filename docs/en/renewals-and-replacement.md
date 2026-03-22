@@ -24,6 +24,8 @@ sudo certbro --state-file /etc/certbro/state.json --certificates-dir /etc/certbr
 
 If an order is still `pending` when the wait timeout is reached, rerun `certbro renew` later. `certbro` resumes monitoring the existing pending request instead of starting a duplicate order.
 
+To avoid immediate follow-up renewals after a fresh issuance, `certbro` also skips certificates that were issued less than `48` hours ago unless `--force` is used.
+
 ## Renewal vs. Reissue
 
 `certbro` chooses the appropriate regfish API flow automatically:
@@ -53,10 +55,12 @@ To request a different lifetime for a forced renewal or fresh renewal order, use
 sudo certbro --state-file /etc/certbro/state.json renew \
   --name example-com \
   --force \
-  --validity-days 3
+  --validity-days 30
 ```
 
 `--validity-days` applies to renewal orders and fresh new orders in that run. It does not apply to reissues.
+
+The requested lifetime must remain greater than the managed `renew_before_days` and `reissue_lead_days`. For very short-lived certificates, reduce those lead times first.
 
 To change the stored default for future renewal orders:
 
@@ -66,16 +70,23 @@ sudo certbro --state-file /etc/certbro/state.json update \
   --validity-days 90
 ```
 
-If a stored `validity_days` exceeds the active CA/B Forum limit at renewal time, `certbro` aborts before placing the order so the lifetime can be adjusted explicitly.
+If a stored `validity_days` exceeds the active schedule-aware limit at renewal time, `certbro renew` automatically uses the current schedule-aware default and persists the adjusted value after a successful renewal.
 
-The active CA/B Forum limits are:
+Official CA/B Forum limits:
 
 - before `2026-03-15`: `398` days maximum
 - from `2026-03-15`: `200` days maximum
 - from `2027-03-15`: `100` days maximum
 - from `2029-03-15`: `47` days maximum
 
-The corresponding `certbro` schedule-aware defaults are `397`, `199`, `99`, and `46` days.
+`certbro` starts using the lower default one day earlier as a safety margin. The corresponding `certbro` defaults are:
+
+- before `2026-03-14`: `397` days
+- from `2026-03-14`: `199` days
+- from `2027-03-14`: `99` days
+- from `2029-03-14`: `46` days
+
+For detailed examples, see [Validity Management](validity-management.md).
 
 ## Replace an Active Certificate Quickly
 
@@ -92,7 +103,7 @@ Example replacement run:
 sudo certbro --state-file /etc/certbro/state.json renew \
   --name example-com \
   --force \
-  --validity-days 3
+  --validity-days 30
 ```
 
 `certbro` does not currently include a dedicated `revoke` command. Revocation of the previous certificate is therefore handled through the regfish Console or the TLS API.
