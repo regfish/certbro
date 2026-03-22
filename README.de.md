@@ -41,7 +41,7 @@ curl -fsSL https://install.certbro.com/rf | CERTBRO_VERSION=v0.1.0 sh
 
 ## Schnellstart
 
-Für Server-Deployments eine systemweite State-Datei verwenden:
+Standardmäßig nutzt `certbro` `/etc/certbro/state.json` als State-Datei und `/etc/certbro` als Root für verwaltete Zertifikate. Die folgenden Befehle nennen die Pfade der Klarheit halber trotzdem explizit:
 
 ```sh
 sudo mkdir -p /etc/certbro

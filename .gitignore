@@ -4,6 +4,8 @@ dist/
 certbro
 scripts/publish-public.sh
 scripts/release-current.sh
+scripts/release-devel.sh
+scripts/testdeploy.sh
 scripts/new-alias-deploy.sh
 *.log
 *.pem

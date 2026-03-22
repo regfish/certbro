@@ -10,6 +10,30 @@ import (
 	"time"
 )
 
+func TestDefaultPathUsesLinuxSystemDefault(t *testing.T) {
+	t.Setenv("CERTBRO_STATE_FILE", "")
+
+	got, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath() error = %v", err)
+	}
+	if got != DefaultStateFilePath {
+		t.Fatalf("DefaultPath() = %q, want %q", got, DefaultStateFilePath)
+	}
+}
+
+func TestDefaultPathPrefersEnvironmentOverride(t *testing.T) {
+	t.Setenv("CERTBRO_STATE_FILE", "/tmp/custom-state.json")
+
+	got, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath() error = %v", err)
+	}
+	if got != "/tmp/custom-state.json" {
+		t.Fatalf("DefaultPath() = %q, want env override", got)
+	}
+}
+
 func TestSaveAndLoadStorePreservesUserAgentMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	want := &Store{

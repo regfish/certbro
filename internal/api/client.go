@@ -122,6 +122,7 @@ type TLSCertificate struct {
 	OrderState             string                 `json:"order_state,omitempty"`
 	RevocationScope        string                 `json:"revocation_scope,omitempty"`
 	RevocationPendingScope string                 `json:"revocation_pending_scope,omitempty"`
+	RenewalSupported       bool                   `json:"renewal_supported,omitempty"`
 	ReissueSupported       bool                   `json:"reissue_supported"`
 	ValidityDays           int                    `json:"validity_days,omitempty"`
 	SerialNumber           string                 `json:"serial_number,omitempty"`

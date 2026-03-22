@@ -17,6 +17,10 @@ import (
 const (
 	// CurrentVersion is the schema version of the persisted global state file.
 	CurrentVersion = 1
+	// DefaultStateFilePath is the default global state file path for Linux deployments.
+	DefaultStateFilePath = "/etc/certbro/state.json"
+	// DefaultCertificatesDir is the default root directory for managed certificate trees.
+	DefaultCertificatesDir = "/etc/certbro"
 	// DefaultRenewBeforeDays is the default lead time before expiry for renewals.
 	DefaultRenewBeforeDays = 7
 	// DefaultReissueLeadDays is the default lead time used when reissue is required.
@@ -133,16 +137,12 @@ type ManagedCertificate struct {
 	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
-// DefaultPath returns the default state file location for the current user.
+// DefaultPath returns the default certbro state file path.
 func DefaultPath() (string, error) {
 	if env := strings.TrimSpace(os.Getenv("CERTBRO_STATE_FILE")); env != "" {
 		return env, nil
 	}
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("determine config dir: %w", err)
-	}
-	return filepath.Join(dir, "certbro", "state.json"), nil
+	return DefaultStateFilePath, nil
 }
 
 // Load reads the global certbro state file, returning an empty store when it does not exist.

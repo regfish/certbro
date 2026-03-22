@@ -77,6 +77,7 @@ func TestPlanRenewal(t *testing.T) {
 			},
 			remote: &api.TLSCertificate{
 				ID:                 "7K9QW3M2ZT8HJ",
+				RenewalSupported:   true,
 				Status:             "issued",
 				ReissueSupported:   true,
 				ValidUntil:         &nearValidUntil,
@@ -92,6 +93,7 @@ func TestPlanRenewal(t *testing.T) {
 			},
 			remote: &api.TLSCertificate{
 				ID:                 "7K9QW3M2ZT8HJ",
+				RenewalSupported:   true,
 				Status:             "issued",
 				ReissueSupported:   true,
 				ValidUntil:         &nearValidUntil,
@@ -107,6 +109,7 @@ func TestPlanRenewal(t *testing.T) {
 			},
 			remote: &api.TLSCertificate{
 				ID:                 "7K9QW3M2ZT8HJ",
+				RenewalSupported:   true,
 				Status:             "issued",
 				ReissueSupported:   true,
 				ValidUntil:         &farValidUntil,
@@ -123,6 +126,7 @@ func TestPlanRenewal(t *testing.T) {
 			},
 			remote: &api.TLSCertificate{
 				ID:                 "7K9QW3M2ZT8HJ",
+				RenewalSupported:   true,
 				Status:             "issued",
 				ReissueSupported:   true,
 				ValidUntil:         &farValidUntil,
@@ -130,6 +134,22 @@ func TestPlanRenewal(t *testing.T) {
 			},
 			force: true,
 			want:  renewalReissue,
+		},
+		{
+			name: "near expiry without renewal support falls back to new order",
+			managed: config.ManagedCertificate{
+				ReissueLeadDays: 7,
+				RenewBeforeDays: 7,
+			},
+			remote: &api.TLSCertificate{
+				ID:                 "7K9QW3M2ZT8HJ",
+				RenewalSupported:   false,
+				Status:             "issued",
+				ReissueSupported:   false,
+				ValidUntil:         &nearValidUntil,
+				ContractValidUntil: &equalContractEnd,
+			},
+			want: renewalNewOrder,
 		},
 	}
 
@@ -341,6 +361,7 @@ func TestRenewOneAppliesValidityOverrideToRenewalOrder(t *testing.T) {
 					"provider": "digicert",
 					"dns_names": ["example.com"],
 					"order_state": "ISSUED",
+					"renewal_supported": true,
 					"reissue_supported": true,
 					"certificate_pem_available": true,
 					"valid_until": "` + oldValidUntil.Format(time.RFC3339) + `",
@@ -393,6 +414,7 @@ func TestRenewOneAppliesValidityOverrideToRenewalOrder(t *testing.T) {
 					"provider": "digicert",
 					"dns_names": ["example.com"],
 					"order_state": "ISSUED",
+					"renewal_supported": true,
 					"reissue_supported": true,
 					"certificate_pem_available": true,
 					"valid_until": "` + newValidUntil.Format(time.RFC3339) + `",
@@ -463,6 +485,7 @@ func TestRenewOneRejectsValidityOverrideForReissue(t *testing.T) {
 					"provider": "digicert",
 					"dns_names": ["example.com"],
 					"order_state": "ISSUED",
+					"renewal_supported": true,
 					"reissue_supported": true,
 					"certificate_pem_available": true,
 					"valid_until": "` + validUntil.Format(time.RFC3339) + `",

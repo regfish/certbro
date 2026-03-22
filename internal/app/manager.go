@@ -879,6 +879,10 @@ func planRenewal(now time.Time, managed config.ManagedCertificate, remote *api.T
 		return renewalReissue
 	}
 
+	if !remote.RenewalSupported {
+		return renewalNewOrder
+	}
+
 	if remote.ID != "" {
 		return renewalOrder
 	}

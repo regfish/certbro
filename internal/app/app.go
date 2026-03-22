@@ -73,7 +73,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	root.StringVar(&opts.StateFile, "state-file", defaultStateFile, "path to certbro state file")
 	root.StringVar(&opts.APIKey, "api-key", "", "regfish API key")
 	root.StringVar(&opts.APIBaseURL, "api-base-url", "", "override API base URL")
-	root.StringVar(&opts.CertificatesDir, "certificates-dir", strings.TrimSpace(os.Getenv("CERTBRO_CERTIFICATES_DIR")), "root directory for certbro-managed certificate directories")
+	root.StringVar(&opts.CertificatesDir, "certificates-dir", firstNonEmpty(strings.TrimSpace(os.Getenv("CERTBRO_CERTIFICATES_DIR")), config.DefaultCertificatesDir), "root directory for certbro-managed certificate directories")
 	root.Usage = func() {
 		a.printRootUsage()
 	}
@@ -867,13 +867,8 @@ func (a *App) storeForRenew(root rootOptions, store *config.Store) (*config.Stor
 		return nil, err
 	}
 
-	merged := &config.Store{
-		Version:           store.Version,
-		APIKey:            store.APIKey,
-		APIBaseURL:        store.APIBaseURL,
-		ContactEmail:      store.ContactEmail,
-		UserAgentInstance: store.UserAgentInstance,
-	}
+	merged := *store
+	merged.ManagedCertificates = nil
 	seen := map[string]struct{}{}
 	for _, cert := range discovered {
 		key := cert.Name
@@ -889,7 +884,7 @@ func (a *App) storeForRenew(root rootOptions, store *config.Store) (*config.Stor
 		seen[key] = struct{}{}
 		merged.ManagedCertificates = append(merged.ManagedCertificates, cert)
 	}
-	return merged, nil
+	return &merged, nil
 }
 
 func firstNonEmpty(values ...string) string {

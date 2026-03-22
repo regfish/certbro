@@ -122,6 +122,7 @@ func TestGetCertificateParsesCurrentOpenAPIFields(t *testing.T) {
 				"order_state": "ISSUED",
 				"revocation_scope": "certificate",
 				"revocation_pending_scope": "order",
+				"renewal_supported": true,
 				"reissue_supported": true,
 				"validity_days": 199,
 				"valid_from": "2026-03-18T10:00:00Z",
@@ -156,6 +157,9 @@ func TestGetCertificateParsesCurrentOpenAPIFields(t *testing.T) {
 	}
 	if cert.RevocationScope != "certificate" || cert.RevocationPendingScope != "order" {
 		t.Fatalf("revocation scopes = %q / %q", cert.RevocationScope, cert.RevocationPendingScope)
+	}
+	if !cert.RenewalSupported {
+		t.Fatalf("RenewalSupported = %v, want true", cert.RenewalSupported)
 	}
 	if !cert.OrderCancellable || cert.OrderCancellationMode != "revoke_issued" {
 		t.Fatalf("order cancellation fields = %#v", cert)

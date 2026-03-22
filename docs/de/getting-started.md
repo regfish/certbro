@@ -29,7 +29,7 @@ curl -fsSL https://install.certbro.com/rf | CERTBRO_VERSION=v0.1.0 sh
 
 ## Konfiguration
 
-Für Server-Deployments ist eine eigene State-Datei unter `/etc/certbro` sinnvoll. So bleiben Konfiguration und verwalteter Zertifikatszustand an einem Ort:
+Standardmäßig nutzt `certbro` `/etc/certbro/state.json` und `/etc/certbro`. Für Server-Deployments bleiben damit Konfiguration und verwalteter Zertifikatszustand an einem Ort:
 
 ```sh
 sudo mkdir -p /etc/certbro

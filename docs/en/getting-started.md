@@ -29,7 +29,7 @@ curl -fsSL https://install.certbro.com/rf | CERTBRO_VERSION=v0.1.0 sh
 
 ## Configure
 
-For server deployments, a dedicated state file under `/etc/certbro` keeps configuration and managed certificate state in one place:
+By default, `certbro` uses `/etc/certbro/state.json` and `/etc/certbro`. For server deployments, these defaults keep configuration and managed certificate state in one place:
 
 ```sh
 sudo mkdir -p /etc/certbro

@@ -287,3 +287,43 @@ func TestNewClientIgnoresUserAgentInstanceEnvVar(t *testing.T) {
 		t.Fatalf("client.UserAgent = %q, must not use env override", client.UserAgent)
 	}
 }
+
+func TestStoreForRenewPreservesVerifiedAPIConfiguration(t *testing.T) {
+	root := t.TempDir()
+	outputDir := filepath.Join(root, "example.com")
+	validatedAt := time.Now().UTC().Round(time.Second)
+
+	managed := config.ManagedCertificate{
+		Name:          "example-com",
+		CommonName:    "example.com",
+		OutputDir:     outputDir,
+		CertificateID: "CERT123",
+	}
+	if err := config.SaveManagedCertificate(outputDir, managed); err != nil {
+		t.Fatalf("SaveManagedCertificate() error = %v", err)
+	}
+
+	store := &config.Store{
+		Version:           config.CurrentVersion,
+		APIKey:            "valid-key",
+		APIBaseURL:        "https://api.regfish.com",
+		APIKeyValidatedAt: &validatedAt,
+		ContactEmail:      "ops@example.com",
+		UserAgentInstance: "host-01",
+	}
+
+	app := &App{}
+	renewStore, err := app.storeForRenew(rootOptions{CertificatesDir: root}, store)
+	if err != nil {
+		t.Fatalf("storeForRenew() error = %v", err)
+	}
+	if renewStore.APIKeyValidatedAt == nil || !renewStore.APIKeyValidatedAt.Equal(validatedAt) {
+		t.Fatalf("renewStore.APIKeyValidatedAt = %v, want %v", renewStore.APIKeyValidatedAt, validatedAt)
+	}
+	if renewStore.APIKey != store.APIKey || renewStore.APIBaseURL != store.APIBaseURL {
+		t.Fatalf("renewStore API configuration = %#v, want preserved global configuration", renewStore)
+	}
+	if len(renewStore.ManagedCertificates) != 1 || renewStore.ManagedCertificates[0].Name != "example-com" {
+		t.Fatalf("renewStore.ManagedCertificates = %#v", renewStore.ManagedCertificates)
+	}
+}

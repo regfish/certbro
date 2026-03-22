@@ -7,6 +7,8 @@ API_ADDR="${CERTBRO_SMOKE_API_ADDR:-127.0.0.1:18081}"
 API_BASE="http://${API_ADDR}"
 API_KEY="${CERTBRO_SMOKE_API_KEY:-smoke-key}"
 STATE_FILE="${TMP_DIR}/state.json"
+CERTIFICATES_DIR="${TMP_DIR}"
+RENEW_LOCK_FILE="${TMP_DIR}/certbro-renew.lock"
 OUTPUT_DIR="${TMP_DIR}/example.com"
 SYSTEMD_DIR="${TMP_DIR}/systemd"
 ENV_FILE="${TMP_DIR}/certbro.env"
@@ -38,6 +40,8 @@ fail() {
 mkdir -p "${TMP_DIR}/gocache" "${TMP_DIR}/gotmp"
 export GOCACHE="${GOCACHE:-${TMP_DIR}/gocache}"
 export GOTMPDIR="${GOTMPDIR:-${TMP_DIR}/gotmp}"
+export CERTBRO_CERTIFICATES_DIR="${CERTBRO_CERTIFICATES_DIR:-${CERTIFICATES_DIR}}"
+export CERTBRO_RENEW_LOCK_FILE="${CERTBRO_RENEW_LOCK_FILE:-${RENEW_LOCK_FILE}}"
 
 printf '[smoke] build certbro\n'
 go build -o "${BIN_PATH}" ./cmd/certbro
@@ -137,6 +141,7 @@ fi
 if [ "$(uname -s)" = "Linux" ]; then
   printf '[smoke] install systemd files without systemctl\n'
   "${BIN_PATH}" --state-file "${STATE_FILE}" install \
+    --certificates-dir "${CERTIFICATES_DIR}" \
     --systemd-dir "${SYSTEMD_DIR}" \
     --env-file "${ENV_FILE}" \
     --binary-path "${BIN_PATH}" \
