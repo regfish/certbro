@@ -29,13 +29,12 @@ curl -fsSL https://install.certbro.com/rf | CERTBRO_VERSION=v0.1.0 sh
 
 ## Configure
 
-By default, `certbro` uses `/etc/certbro/state.json` and `/etc/certbro`. For server deployments, these defaults keep configuration and managed certificate state in one place:
+By default, `certbro` uses `/etc/certbro/state.json` and `/etc/certbro`. For server deployments, these defaults keep configuration and managed certificate state in one place. The commands below rely on them:
 
 ```sh
 sudo mkdir -p /etc/certbro
 
-sudo certbro --state-file /etc/certbro/state.json configure \
-  --api-key YOUR_REGFISH_API_KEY
+sudo certbro configure --api-key YOUR_REGFISH_API_KEY
 ```
 
 `certbro configure` validates the API key before it is stored. Commands that talk to the regfish API require a verified configured key.
@@ -43,13 +42,13 @@ sudo certbro --state-file /etc/certbro/state.json configure \
 ## Issue the First Certificate
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json issue \
+sudo certbro issue \
   --name example-com \
   --common-name example.com \
-  --product RapidSSL \
-  --webserver nginx \
-  --output-dir /etc/certbro/example.com
+  --webserver nginx
 ```
+
+Without an explicit `--output-dir`, `certbro` writes to `/etc/certbro/example.com` under the Linux defaults.
 
 If `--validity-days` is omitted, `certbro` chooses a date-aware default with a one-day safety margin before each CA/B Forum transition. The current defaults are `199` days from `2026-03-14`, `99` days from `2027-03-14`, and `46` days from `2029-03-14`.
 
@@ -64,7 +63,7 @@ After a successful issue, `certbro` writes:
 - `/etc/certbro/example.com/live/metadata.json`
 - `/etc/certbro/example.com/archive/<timestamp>/...`
 
-If the order is still pending, temporary order state remains under `/etc/certbro/example.com/pending/` and later `certbro renew` runs resume it automatically.
+If the order is still pending, temporary order state remains under `/etc/certbro/example.com/pending/` and later `certbro renew` runs resume it automatically. For OV or business orders, this pending state can also contain a Console `completion_url` under `/my/certs/...`; complete that step there and let `certbro renew` finalize the same order afterwards.
 
 ## Webserver Integration
 
@@ -79,12 +78,11 @@ Supported built-in validation and reload behavior:
 Example:
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json issue \
+sudo certbro issue \
   --name example-com \
   --common-name example.com \
   --webserver nginx \
-  --webserver-config /etc/nginx/nginx.conf \
-  --output-dir /etc/certbro/example.com
+  --webserver-config /etc/nginx/nginx.conf
 ```
 
 ## Next Steps

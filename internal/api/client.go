@@ -111,54 +111,82 @@ type TLSCertificateReissue struct {
 	Validation    *TLSValidation `json:"validation,omitempty"`
 }
 
+// TLSOrganizationSummary contains the minimal organization metadata returned with a certificate.
+type TLSOrganizationSummary struct {
+	ID                int    `json:"id"`
+	Name              string `json:"name"`
+	Status            string `json:"status"`
+	UsableForOrdering bool   `json:"usable_for_ordering"`
+}
+
 // TLSCertificate models the public TLS certificate resource returned by the API.
 type TLSCertificate struct {
-	ID                     string                 `json:"id"`
-	Status                 string                 `json:"status"`
-	CommonName             string                 `json:"common_name"`
-	Product                string                 `json:"product"`
-	Provider               string                 `json:"provider"`
-	DNSNames               []string               `json:"dns_names"`
-	OrderState             string                 `json:"order_state,omitempty"`
-	RevocationScope        string                 `json:"revocation_scope,omitempty"`
-	RevocationPendingScope string                 `json:"revocation_pending_scope,omitempty"`
-	RenewalSupported       bool                   `json:"renewal_supported,omitempty"`
-	ReissueSupported       bool                   `json:"reissue_supported"`
-	ValidityDays           int                    `json:"validity_days,omitempty"`
-	SerialNumber           string                 `json:"serial_number,omitempty"`
-	ValidFrom              *time.Time             `json:"valid_from,omitempty"`
-	ValidUntil             *time.Time             `json:"valid_until,omitempty"`
-	ContractValidFrom      *time.Time             `json:"contract_valid_from,omitempty"`
-	ContractValidUntil     *time.Time             `json:"contract_valid_until,omitempty"`
-	LastStatusCheck        *time.Time             `json:"last_status_check,omitempty"`
-	CertificateAvailable   bool                   `json:"certificate_pem_available"`
-	OrderCancellable       bool                   `json:"order_cancellable,omitempty"`
-	OrderCancellationMode  string                 `json:"order_cancellation_mode,omitempty"`
-	OrderCancellableUntil  *time.Time             `json:"order_cancellable_until,omitempty"`
-	Validation             *TLSValidation         `json:"validation,omitempty"`
-	Reissue                *TLSCertificateReissue `json:"reissue,omitempty"`
+	ID                     string   `json:"id"`
+	Status                 string   `json:"status"`
+	CommonName             string   `json:"common_name"`
+	Product                string   `json:"product"`
+	Provider               string   `json:"provider"`
+	DNSNames               []string `json:"dns_names"`
+	OrderState             string   `json:"order_state,omitempty"`
+	ActionRequired         bool     `json:"action_required"`
+	PendingReason          string   `json:"pending_reason,omitempty"`
+	PendingMessage         string   `json:"pending_message,omitempty"`
+	CompletionURL          string   `json:"completion_url,omitempty"`
+	OrganizationID         int      `json:"organization_id,omitempty"`
+	RevocationScope        string   `json:"revocation_scope,omitempty"`
+	RevocationPendingScope string   `json:"revocation_pending_scope,omitempty"`
+	RenewalSupported       bool     `json:"renewal_supported,omitempty"`
+	ReissueSupported       bool     `json:"reissue_supported"`
+	// ValidityDays is the purchased base order validity in days. It is not the authoritative
+	// issued certificate lifetime for provider-linked renewals. Use ValidFrom and ValidUntil
+	// to determine the effective issued lifetime.
+	ValidityDays int `json:"validity_days,omitempty"`
+	// RenewalBonusDays is an optional provider-confirmed bonus on top of ValidityDays once the
+	// issued renewal certificate lifetime can be determined. certbro still derives the effective
+	// issued lifetime from ValidFrom and ValidUntil.
+	RenewalBonusDays      *int                    `json:"renewal_bonus_days,omitempty"`
+	SerialNumber          string                  `json:"serial_number,omitempty"`
+	ValidFrom             *time.Time              `json:"valid_from,omitempty"`
+	ValidUntil            *time.Time              `json:"valid_until,omitempty"`
+	ContractValidFrom     *time.Time              `json:"contract_valid_from,omitempty"`
+	ContractValidUntil    *time.Time              `json:"contract_valid_until,omitempty"`
+	LastStatusCheck       *time.Time              `json:"last_status_check,omitempty"`
+	CertificateAvailable  bool                    `json:"certificate_pem_available"`
+	OrderCancellable      bool                    `json:"order_cancellable,omitempty"`
+	OrderCancellationMode string                  `json:"order_cancellation_mode,omitempty"`
+	OrderCancellableUntil *time.Time              `json:"order_cancellable_until,omitempty"`
+	Organization          *TLSOrganizationSummary `json:"organization,omitempty"`
+	Validation            *TLSValidation          `json:"validation,omitempty"`
+	Reissue               *TLSCertificateReissue  `json:"reissue,omitempty"`
 }
 
 // TLSProduct describes one entry from the TLS product catalog.
 type TLSProduct struct {
-	SKU         string `json:"sku"`
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	CA          string `json:"ca"`
-	Recommended bool   `json:"recommended,omitempty"`
+	SKU                  string `json:"sku"`
+	Name                 string `json:"name"`
+	Type                 string `json:"type"`
+	CA                   string `json:"ca"`
+	Recommended          bool   `json:"recommended,omitempty"`
+	ValidationLevel      string `json:"validation_level,omitempty"`
+	OrganizationRequired bool   `json:"organization_required,omitempty"`
 }
 
 // TLSCertificateRequest is the order or renewal payload for POST /tls/certificate.
 type TLSCertificateRequest struct {
-	SKU                    string   `json:"sku"`
-	CommonName             string   `json:"common_name"`
-	DNSNames               []string `json:"dns_names,omitempty"`
-	CSR                    string   `json:"csr"`
-	DCVMethod              string   `json:"dcv_method"`
-	DCVEmails              []string `json:"dcv_emails,omitempty"`
-	Organization           int      `json:"org_id,omitempty"`
-	RenewalOfCertificateID string   `json:"renewal_of_certificate_id,omitempty"`
-	ValidityDays           int      `json:"validity_days,omitempty"`
+	SKU          string   `json:"sku"`
+	CommonName   string   `json:"common_name"`
+	DNSNames     []string `json:"dns_names,omitempty"`
+	CSR          string   `json:"csr"`
+	DCVMethod    string   `json:"dcv_method"`
+	DCVEmails    []string `json:"dcv_emails,omitempty"`
+	Organization int      `json:"org_id,omitempty"`
+	// RenewalOfCertificateID turns a regular order into a provider-linked renewal of an existing
+	// public certificate id. Any remaining-validity bonus is decided by the provider and is not
+	// guaranteed until the new certificate has actually been issued.
+	RenewalOfCertificateID string `json:"renewal_of_certificate_id,omitempty"`
+	// ValidityDays is the purchased base order validity in days. For provider-linked renewals it
+	// is not reduced by any expected remaining-validity bonus from the previous certificate.
+	ValidityDays int `json:"validity_days,omitempty"`
 }
 
 // TLSCertificateReissueRequest is the payload for POST /tls/certificate/{id}/reissue.

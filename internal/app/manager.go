@@ -24,19 +24,29 @@ type Manager struct {
 	Client                      *api.Client
 	Store                       *config.Store
 	StorePath                   string
+	CertificatesDir             string
 	Progress                    progressReporter
 	provisionedValidationRecord map[string]struct{}
 }
 
 // OperationResult summarizes the effect of a single issue, import, or renewal action.
 type OperationResult struct {
-	Name          string
-	Action        string
-	Changed       bool
-	CertificateID string
-	Status        string
-	LiveDir       string
-	Message       string
+	Name                  string
+	Action                string
+	Changed               bool
+	CertificateID         string
+	Status                string
+	LiveDir               string
+	Message               string
+	ActionRequired        bool
+	PendingReason         string
+	PendingMessage        string
+	CompletionURL         string
+	PurchasedValidityDays int
+	EffectiveValidityDays int
+	RenewalBonusDays      int
+	HasEffectiveValidity  bool
+	HasRenewalBonus       bool
 }
 
 type renewalAction string
@@ -59,6 +69,7 @@ func NewManager(client *api.Client, store *config.Store, storePath string) *Mana
 		Client:                      client,
 		Store:                       store,
 		StorePath:                   storePath,
+		CertificatesDir:             config.DefaultCertificatesDir,
 		Progress:                    nopProgressReporter{},
 		provisionedValidationRecord: make(map[string]struct{}),
 	}
@@ -69,8 +80,31 @@ type waitTimeoutError struct {
 	Status        string
 }
 
+type actionRequiredError struct {
+	Certificate *api.TLSCertificate
+}
+
+type providerValidationPendingError struct {
+	Certificate           *api.TLSCertificate
+	ValidationProvisioned bool
+}
+
 func (e *waitTimeoutError) Error() string {
 	return fmt.Sprintf("timeout waiting for certificate %s, last status %s", e.CertificateID, emptyFallback(e.Status, "unknown"))
+}
+
+func (e *actionRequiredError) Error() string {
+	if e == nil || e.Certificate == nil {
+		return "certificate requires completion in the regfish Console before issuance can continue"
+	}
+	return fmt.Sprintf("certificate %s requires completion in the regfish Console before issuance can continue", emptyFallback(e.Certificate.ID, "unknown"))
+}
+
+func (e *providerValidationPendingError) Error() string {
+	if e == nil || e.Certificate == nil {
+		return "provider-side OV/business validation is still pending after DCV provisioning"
+	}
+	return fmt.Sprintf("certificate %s is still pending after DCV provisioning because provider-side OV/business validation is not complete yet", emptyFallback(e.Certificate.ID, "unknown"))
 }
 
 // Issue creates a fresh certificate order and deploys the result once issued.
@@ -98,12 +132,6 @@ func (m *Manager) Import(ctx context.Context, managed config.ManagedCertificate,
 		return nil, errors.New("missing certificate_id")
 	}
 
-	absOutputDir, err := filepath.Abs(managed.OutputDir)
-	if err != nil {
-		return nil, fmt.Errorf("resolve output dir %s: %w", managed.OutputDir, err)
-	}
-	managed.OutputDir = absOutputDir
-
 	remote, err := m.Client.GetCertificate(ctx, managed.CertificateID)
 	if err != nil {
 		return nil, err
@@ -114,13 +142,24 @@ func (m *Manager) Import(ctx context.Context, managed config.ManagedCertificate,
 
 	managed.CertificateID = remote.ID
 	managed.CommonName = remote.CommonName
+	if strings.TrimSpace(managed.OutputDir) == "" {
+		managed.OutputDir = defaultManagedOutputDir(m.CertificatesDir, remote.CommonName)
+	}
+	absOutputDir, err := filepath.Abs(managed.OutputDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve output dir %s: %w", managed.OutputDir, err)
+	}
+	managed.OutputDir = absOutputDir
 	managed.DNSNames = certcrypto.NormalizeDNSNames("", remote.DNSNames)
 	managed.Product = remote.Product
+	if remote.OrganizationID > 0 {
+		managed.OrganizationID = remote.OrganizationID
+	}
 	if remote.ValidityDays > 0 {
 		managed.ValidityDays = remote.ValidityDays
 	}
 	if strings.TrimSpace(managed.Name) == "" {
-		managed.Name = strings.TrimSpace(strings.ToLower(remote.CommonName))
+		managed.Name = strings.ToLower(trimCommonName(remote.CommonName))
 	}
 	if err := config.ValidateRenewalTiming(managed.ValidityDays, managed.RenewBeforeDays, managed.ReissueLeadDays); err != nil {
 		return nil, err
@@ -147,6 +186,7 @@ func (m *Manager) Import(ctx context.Context, managed config.ManagedCertificate,
 		Status:        managed.Status,
 		Message:       "certificate imported",
 	}
+	populateIssuedValidityDetails(result, effectiveBaseValidityDays(remote.ValidityDays, managed.ValidityDays), remote.ValidFrom, remote.ValidUntil)
 
 	if len(privateKeyPEM) == 0 {
 		result.Message = "certificate imported for renewal management"
@@ -173,6 +213,7 @@ func (m *Manager) Import(ctx context.Context, managed config.ManagedCertificate,
 		PrivateKeyPEM:      privateKeyPEM,
 		CSRPEM:             csrPEM,
 		FullChainPEM:       fullChainPEM,
+		ValidityDays:       effectiveBaseValidityDays(remote.ValidityDays, managed.ValidityDays),
 		ValidFrom:          remote.ValidFrom,
 		ValidUntil:         remote.ValidUntil,
 		ContractValidUntil: remote.ContractValidUntil,
@@ -320,9 +361,60 @@ func (m *Manager) renewOne(ctx context.Context, managed *config.ManagedCertifica
 				pendingAction = "issue"
 			}
 		}
-		m.progress().WaitStart("%s: resuming pending %s for certificate_id %s, still waiting for issuance and this can take a few minutes", managed.Name, pendingAction, remote.ID)
-		finalCert, fullChainPEM, bundleZIP, err := m.waitAndDownload(ctx, remote.ID, pendingAction, managed.ValidUntil, waitTimeout, waitInterval)
+		pendingMeta := pendingMetadataForCertificate(pendingMaterial.Metadata, remote, managed, nil)
+		if err := deploy.WritePending(managed.OutputDir, deploy.PendingMaterial{
+			PrivateKeyPEM: pendingMaterial.PrivateKeyPEM,
+			CSRPEM:        pendingMaterial.CSRPEM,
+			Metadata:      pendingMeta,
+		}); err != nil {
+			return nil, err
+		}
+		if remote.ActionRequired {
+			m.applyRemoteState(managed, remote)
+			if err := m.persistManaged(*managed); err != nil {
+				return nil, err
+			}
+			return pendingActionRequiredResult(*managed, string(renewalCompletePending), remote, pendingMeta), nil
+		}
+		initialValidationProvisioned, err := m.ensureValidationRecordsWithChange(ctx, remote)
 		if err != nil {
+			return nil, err
+		}
+		m.progress().WaitStart("%s: resuming pending %s for certificate_id %s, still waiting for issuance and this can take a few minutes", managed.Name, pendingAction, remote.ID)
+		finalCert, fullChainPEM, bundleZIP, err := m.waitAndDownload(ctx, remote.ID, pendingAction, managed.ValidUntil, waitTimeout, waitInterval, pendingOrderMayPauseAfterValidation(pendingMeta, managed, remote))
+		if err != nil {
+			var actionErr *actionRequiredError
+			if errors.As(err, &actionErr) && actionErr.Certificate != nil {
+				pendingMeta = pendingMetadataForCertificate(pendingMeta, actionErr.Certificate, managed, nil)
+				if err := deploy.WritePending(managed.OutputDir, deploy.PendingMaterial{
+					PrivateKeyPEM: pendingMaterial.PrivateKeyPEM,
+					CSRPEM:        pendingMaterial.CSRPEM,
+					Metadata:      pendingMeta,
+				}); err != nil {
+					return nil, err
+				}
+				m.applyRemoteState(managed, actionErr.Certificate)
+				if err := m.persistManaged(*managed); err != nil {
+					return nil, err
+				}
+				return pendingActionRequiredResult(*managed, string(renewalCompletePending), actionErr.Certificate, pendingMeta), nil
+			}
+			var validationPendingErr *providerValidationPendingError
+			if errors.As(err, &validationPendingErr) && validationPendingErr.Certificate != nil {
+				pendingMeta = pendingMetadataForCertificate(pendingMeta, validationPendingErr.Certificate, managed, nil)
+				if err := deploy.WritePending(managed.OutputDir, deploy.PendingMaterial{
+					PrivateKeyPEM: pendingMaterial.PrivateKeyPEM,
+					CSRPEM:        pendingMaterial.CSRPEM,
+					Metadata:      pendingMeta,
+				}); err != nil {
+					return nil, err
+				}
+				m.applyRemoteState(managed, validationPendingErr.Certificate)
+				if err := m.persistManaged(*managed); err != nil {
+					return nil, err
+				}
+				return pendingProviderValidationResult(*managed, string(renewalCompletePending), validationPendingErr.Certificate, initialValidationProvisioned || validationPendingErr.ValidationProvisioned), nil
+			}
 			return nil, withPendingResumeHint(err, managed.Name)
 		}
 		return m.finishDeployment(managed, pendingMaterial.PrivateKeyPEM, pendingMaterial.CSRPEM, finalCert, fullChainPEM, bundleZIP, pendingAction, "completed pending request")
@@ -358,11 +450,14 @@ func (m *Manager) startOrder(ctx context.Context, managed *config.ManagedCertifi
 	}
 
 	m.progress().Stepf("%s: validating TLS product %s", managed.Name, managed.Product)
-	productSKU, err := m.resolveProductSKU(ctx, managed.Product)
+	product, err := m.resolveProduct(ctx, managed.Product)
 	if err != nil {
 		return nil, err
 	}
-	managed.Product = productSKU
+	managed.Product = product.SKU
+	if productMayRequireConsoleCompletion(product) {
+		m.progress().Stepf("%s: %s may require a completion step in the regfish Console before issuance can continue", managed.Name, managed.Product)
+	}
 
 	m.progress().Stepf("%s: generating %s key and CSR", managed.Name, strings.ToUpper(managed.KeyType))
 	material, err := certcrypto.GenerateKeyAndCSR(managed.CommonName, managed.DNSNames, certcrypto.KeyOptions{
@@ -375,11 +470,15 @@ func (m *Manager) startOrder(ctx context.Context, managed *config.ManagedCertifi
 	}
 
 	pendingMeta := deploy.PendingMetadata{
-		Action:      action,
-		CommonName:  managed.CommonName,
-		DNSNames:    managed.DNSNames,
-		Product:     managed.Product,
-		RequestedAt: time.Now().UTC(),
+		Action:                 action,
+		CommonName:             managed.CommonName,
+		DNSNames:               managed.DNSNames,
+		Product:                managed.Product,
+		ProductValidationLevel: strings.TrimSpace(product.ValidationLevel),
+		OrganizationRequired:   product.OrganizationRequired,
+		RequestedAt:            time.Now().UTC(),
+		RequestedValidityDays:  managed.ValidityDays,
+		OrganizationID:         managed.OrganizationID,
 	}
 	if err := deploy.WritePending(managed.OutputDir, deploy.PendingMaterial{
 		PrivateKeyPEM: material.PrivateKeyPEM,
@@ -391,9 +490,9 @@ func (m *Manager) startOrder(ctx context.Context, managed *config.ManagedCertifi
 
 	switch {
 	case renewalOfCertificateID != "":
-		m.progress().Stepf("%s: starting renewal order for certificate_id %s", managed.Name, renewalOfCertificateID)
+		m.progress().Stepf("%s: starting renewal order for certificate_id %s with purchased base validity %d days", managed.Name, renewalOfCertificateID, managed.ValidityDays)
 	default:
-		m.progress().Stepf("%s: starting certificate order", managed.Name)
+		m.progress().Stepf("%s: starting certificate order with purchased base validity %d days", managed.Name, managed.ValidityDays)
 	}
 	cert, err := m.Client.CreateCertificate(ctx, api.TLSCertificateRequest{
 		SKU:                    managed.Product,
@@ -418,7 +517,7 @@ func (m *Manager) startOrder(ctx context.Context, managed *config.ManagedCertifi
 		return nil, err
 	}
 
-	pendingMeta.CertificateID = cert.ID
+	pendingMeta = pendingMetadataForCertificate(pendingMeta, cert, managed, &product)
 	if err := deploy.WritePending(managed.OutputDir, deploy.PendingMaterial{
 		PrivateKeyPEM: material.PrivateKeyPEM,
 		CSRPEM:        material.CSRPEM,
@@ -427,13 +526,34 @@ func (m *Manager) startOrder(ctx context.Context, managed *config.ManagedCertifi
 		return nil, err
 	}
 
+	if cert.ActionRequired {
+		m.progress().Stepf("%s: order started and now requires completion in the regfish Console before issuance can continue", managed.Name)
+		return pendingActionRequiredResult(*managed, action, cert, pendingMeta), nil
+	}
+
 	if err := m.ensureValidationRecords(ctx, cert); err != nil {
 		return nil, err
 	}
 
 	m.progress().WaitStart("%s: waiting for issuance of certificate_id %s, this can take a few minutes", managed.Name, cert.ID)
-	finalCert, fullChainPEM, bundleZIP, err := m.waitAndDownload(ctx, cert.ID, action, nil, waitTimeout, waitInterval)
+	finalCert, fullChainPEM, bundleZIP, err := m.waitAndDownload(ctx, cert.ID, action, nil, waitTimeout, waitInterval, false)
 	if err != nil {
+		var actionErr *actionRequiredError
+		if errors.As(err, &actionErr) && actionErr.Certificate != nil {
+			pendingMeta = pendingMetadataForCertificate(pendingMeta, actionErr.Certificate, managed, &product)
+			if err := deploy.WritePending(managed.OutputDir, deploy.PendingMaterial{
+				PrivateKeyPEM: material.PrivateKeyPEM,
+				CSRPEM:        material.CSRPEM,
+				Metadata:      pendingMeta,
+			}); err != nil {
+				return nil, err
+			}
+			m.applyRemoteState(managed, actionErr.Certificate)
+			if err := m.persistManaged(*managed); err != nil {
+				return nil, err
+			}
+			return pendingActionRequiredResult(*managed, action, actionErr.Certificate, pendingMeta), nil
+		}
 		return nil, withPendingResumeHint(err, managed.Name)
 	}
 
@@ -446,24 +566,42 @@ func (m *Manager) startOrder(ctx context.Context, managed *config.ManagedCertifi
 
 // resolveProductSKU looks up the canonical product SKU from the live TLS product catalog.
 func (m *Manager) resolveProductSKU(ctx context.Context, wanted string) (string, error) {
+	product, err := m.resolveProduct(ctx, wanted)
+	if err != nil {
+		return "", err
+	}
+	return product.SKU, nil
+}
+
+// resolveProduct looks up one product entry from the live TLS product catalog.
+func (m *Manager) resolveProduct(ctx context.Context, wanted string) (api.TLSProduct, error) {
 	products, err := m.Client.ListTLSProducts(ctx)
 	if err != nil {
-		return "", fmt.Errorf("list TLS products: %w", err)
+		return api.TLSProduct{}, fmt.Errorf("list TLS products: %w", err)
 	}
 
-	return m.resolveProductSKUFromCatalog(products, wanted)
+	return m.resolveProductFromCatalog(products, wanted)
 }
 
 // resolveProductSKUFromCatalog validates a product against a previously fetched product catalog.
 func (m *Manager) resolveProductSKUFromCatalog(products []api.TLSProduct, wanted string) (string, error) {
+	product, err := m.resolveProductFromCatalog(products, wanted)
+	if err != nil {
+		return "", err
+	}
+	return product.SKU, nil
+}
+
+// resolveProductFromCatalog validates a product against a previously fetched product catalog.
+func (m *Manager) resolveProductFromCatalog(products []api.TLSProduct, wanted string) (api.TLSProduct, error) {
 	wanted = strings.TrimSpace(wanted)
 	if wanted == "" {
-		return "", errors.New("missing TLS product")
+		return api.TLSProduct{}, errors.New("missing TLS product")
 	}
 
 	for _, product := range products {
 		if strings.EqualFold(product.SKU, wanted) {
-			return product.SKU, nil
+			return product, nil
 		}
 	}
 
@@ -476,9 +614,9 @@ func (m *Manager) resolveProductSKUFromCatalog(products []api.TLSProduct, wanted
 	}
 	sort.Strings(available)
 	if len(available) == 0 {
-		return "", fmt.Errorf("unknown TLS product %q and the product catalog is empty", wanted)
+		return api.TLSProduct{}, fmt.Errorf("unknown TLS product %q and the product catalog is empty", wanted)
 	}
-	return "", fmt.Errorf("unknown TLS product %q; available products: %s", wanted, strings.Join(available, ", "))
+	return api.TLSProduct{}, fmt.Errorf("unknown TLS product %q; available products: %s", wanted, strings.Join(available, ", "))
 }
 
 // performReissue submits a reissue request for the existing contract and deploys the result.
@@ -494,12 +632,14 @@ func (m *Manager) performReissue(ctx context.Context, managed *config.ManagedCer
 	}
 
 	pendingMeta := deploy.PendingMetadata{
-		Action:        "reissue",
-		CertificateID: remote.ID,
-		CommonName:    managed.CommonName,
-		DNSNames:      managed.DNSNames,
-		Product:       managed.Product,
-		RequestedAt:   time.Now().UTC(),
+		Action:                "reissue",
+		CertificateID:         remote.ID,
+		CommonName:            managed.CommonName,
+		DNSNames:              managed.DNSNames,
+		Product:               managed.Product,
+		RequestedAt:           time.Now().UTC(),
+		RequestedValidityDays: managed.ValidityDays,
+		OrganizationID:        managed.OrganizationID,
 	}
 	if err := deploy.WritePending(managed.OutputDir, deploy.PendingMaterial{
 		PrivateKeyPEM: material.PrivateKeyPEM,
@@ -534,7 +674,7 @@ func (m *Manager) performReissue(ctx context.Context, managed *config.ManagedCer
 	}
 
 	m.progress().WaitStart("%s: waiting for reissue of certificate_id %s, this can take a few minutes", managed.Name, remote.ID)
-	finalCert, fullChainPEM, bundleZIP, err := m.waitAndDownload(ctx, remote.ID, "reissue", remote.ValidUntil, waitTimeout, waitInterval)
+	finalCert, fullChainPEM, bundleZIP, err := m.waitAndDownload(ctx, remote.ID, "reissue", remote.ValidUntil, waitTimeout, waitInterval, false)
 	if err != nil {
 		return nil, withPendingResumeHint(err, managed.Name)
 	}
@@ -558,6 +698,7 @@ func (m *Manager) finishDeployment(managed *config.ManagedCertificate, privateKe
 		CSRPEM:             csrPEM,
 		FullChainPEM:       fullChainPEM,
 		BundleZIP:          bundleZIP,
+		ValidityDays:       effectiveBaseValidityDays(cert.ValidityDays, managed.ValidityDays),
 		ValidFrom:          cert.ValidFrom,
 		ValidUntil:         cert.ValidUntil,
 		ContractValidUntil: cert.ContractValidUntil,
@@ -586,7 +727,7 @@ func (m *Manager) finishDeployment(managed *config.ManagedCertificate, privateKe
 	}
 	m.progress().WaitDone("%s: deployment finished", managed.Name)
 
-	return &OperationResult{
+	result := &OperationResult{
 		Name:          managed.Name,
 		Action:        action,
 		Changed:       true,
@@ -594,7 +735,143 @@ func (m *Manager) finishDeployment(managed *config.ManagedCertificate, privateKe
 		Status:        cert.Status,
 		LiveDir:       deployResult.LiveDir,
 		Message:       message,
-	}, nil
+	}
+	populateIssuedValidityDetails(result, effectiveBaseValidityDays(cert.ValidityDays, managed.ValidityDays), cert.ValidFrom, cert.ValidUntil)
+	return result, nil
+}
+
+func pendingMetadataForCertificate(meta deploy.PendingMetadata, cert *api.TLSCertificate, managed *config.ManagedCertificate, product *api.TLSProduct) deploy.PendingMetadata {
+	if cert == nil {
+		return meta
+	}
+
+	if strings.TrimSpace(cert.ID) != "" {
+		meta.CertificateID = cert.ID
+	}
+	if strings.TrimSpace(cert.CommonName) != "" {
+		meta.CommonName = cert.CommonName
+	}
+	if len(cert.DNSNames) > 0 {
+		meta.DNSNames = certcrypto.NormalizeDNSNames("", cert.DNSNames)
+	}
+	if strings.TrimSpace(cert.Product) != "" {
+		meta.Product = cert.Product
+	} else if managed != nil && strings.TrimSpace(meta.Product) == "" {
+		meta.Product = managed.Product
+	}
+	if product != nil {
+		meta.ProductValidationLevel = strings.TrimSpace(product.ValidationLevel)
+		meta.OrganizationRequired = product.OrganizationRequired
+	}
+	if cert.ValidityDays > 0 {
+		meta.RequestedValidityDays = cert.ValidityDays
+	} else if meta.RequestedValidityDays == 0 && managed != nil {
+		meta.RequestedValidityDays = managed.ValidityDays
+	}
+	if cert.OrganizationID > 0 {
+		meta.OrganizationID = cert.OrganizationID
+	} else if meta.OrganizationID == 0 && managed != nil {
+		meta.OrganizationID = managed.OrganizationID
+	}
+
+	meta.ActionRequired = cert.ActionRequired
+	if cert.ActionRequired {
+		if strings.TrimSpace(cert.PendingReason) != "" {
+			meta.PendingReason = strings.TrimSpace(cert.PendingReason)
+		} else if meta.PendingReason == "" && product != nil && product.OrganizationRequired {
+			meta.PendingReason = "organization_required"
+		}
+		if strings.TrimSpace(cert.PendingMessage) != "" {
+			meta.PendingMessage = strings.TrimSpace(cert.PendingMessage)
+		} else if strings.TrimSpace(meta.PendingMessage) == "" {
+			meta.PendingMessage = defaultPendingMessage(cert, product)
+		}
+		if strings.TrimSpace(cert.CompletionURL) != "" {
+			meta.CompletionURL = strings.TrimSpace(cert.CompletionURL)
+		}
+	} else {
+		meta.PendingReason = strings.TrimSpace(cert.PendingReason)
+		meta.PendingMessage = strings.TrimSpace(cert.PendingMessage)
+		meta.CompletionURL = strings.TrimSpace(cert.CompletionURL)
+	}
+
+	return meta
+}
+
+func defaultPendingMessage(cert *api.TLSCertificate, product *api.TLSProduct) string {
+	if product != nil && product.OrganizationRequired {
+		return "Complete the OV/business order in the regfish Console. certbro renew will resume issuance afterwards."
+	}
+	if cert != nil && strings.EqualFold(strings.TrimSpace(cert.PendingReason), "organization_required") {
+		return "Complete the organization and contact step in the regfish Console. certbro renew will resume issuance afterwards."
+	}
+	return "Complete the pending order in the regfish Console. certbro renew will resume issuance afterwards."
+}
+
+func productMayRequireConsoleCompletion(product api.TLSProduct) bool {
+	if product.OrganizationRequired {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(product.ValidationLevel)) {
+	case "ov", "ev":
+		return true
+	default:
+		return false
+	}
+}
+
+func pendingActionRequiredResult(managed config.ManagedCertificate, action string, cert *api.TLSCertificate, pendingMeta deploy.PendingMetadata) *OperationResult {
+	message := "order requires completion in the regfish Console before certbro renew can finish it"
+	switch action {
+	case "issue":
+		message = "order started; complete it in the regfish Console before certbro renew can finish it"
+	case string(renewalCompletePending):
+		message = "waiting for order completion in the regfish Console"
+	}
+
+	result := &OperationResult{
+		Name:           managed.Name,
+		Action:         action,
+		Changed:        false,
+		CertificateID:  firstNonEmpty(strings.TrimSpace(pendingMeta.CertificateID), managed.CertificateID),
+		Message:        message,
+		ActionRequired: true,
+		PendingReason:  strings.TrimSpace(pendingMeta.PendingReason),
+		PendingMessage: strings.TrimSpace(pendingMeta.PendingMessage),
+		CompletionURL:  strings.TrimSpace(pendingMeta.CompletionURL),
+	}
+	if cert != nil {
+		result.Status = cert.Status
+		if result.CertificateID == "" {
+			result.CertificateID = cert.ID
+		}
+	}
+	if purchasedValidityDays := effectiveBaseValidityDays(0, pendingMeta.RequestedValidityDays); purchasedValidityDays > 0 {
+		result.PurchasedValidityDays = purchasedValidityDays
+	}
+	return result
+}
+
+func pendingProviderValidationResult(managed config.ManagedCertificate, action string, cert *api.TLSCertificate, changed bool) *OperationResult {
+	message := "provider-side OV/business validation is still pending; certbro renew will continue later"
+	if changed {
+		message = "DCV provisioned; provider-side OV/business validation is still pending and certbro renew will continue later"
+	}
+
+	result := &OperationResult{
+		Name:          managed.Name,
+		Action:        action,
+		Changed:       changed,
+		CertificateID: managed.CertificateID,
+		Message:       message,
+	}
+	if cert != nil {
+		result.Status = cert.Status
+		if result.CertificateID == "" {
+			result.CertificateID = cert.ID
+		}
+	}
+	return result
 }
 
 func (m *Manager) postDeploy(managed *config.ManagedCertificate, cert *api.TLSCertificate, deployResult *deploy.Result) error {
@@ -625,12 +902,18 @@ func (m *Manager) postDeploy(managed *config.ManagedCertificate, cert *api.TLSCe
 }
 
 func (m *Manager) ensureValidationRecords(ctx context.Context, cert *api.TLSCertificate) error {
+	_, err := m.ensureValidationRecordsWithChange(ctx, cert)
+	return err
+}
+
+func (m *Manager) ensureValidationRecordsWithChange(ctx context.Context, cert *api.TLSCertificate) (bool, error) {
 	if m.provisionedValidationRecord == nil {
 		m.provisionedValidationRecord = make(map[string]struct{})
 	}
 
 	seen := map[string]struct{}{}
 	records := make([]api.TLSValidationDNSRecord, 0)
+	changed := false
 
 	if cert.Validation != nil && cert.Validation.Method == "dns-cname-token" {
 		records = append(records, cert.Validation.DNSRecords...)
@@ -650,12 +933,13 @@ func (m *Manager) ensureValidationRecords(ctx context.Context, cert *api.TLSCert
 		}
 
 		if err := m.provisionValidationRecord(ctx, cert.ID, record); err != nil {
-			return err
+			return changed, err
 		}
 		m.provisionedValidationRecord[key] = struct{}{}
+		changed = true
 	}
 
-	return nil
+	return changed, nil
 }
 
 func (m *Manager) provisionValidationRecord(ctx context.Context, certificateID string, record api.TLSValidationDNSRecord) error {
@@ -727,7 +1011,7 @@ func (m *Manager) provisionValidationRecord(ctx context.Context, certificateID s
 	return nil
 }
 
-func (m *Manager) waitAndDownload(ctx context.Context, certificateID, action string, previousValidUntil *time.Time, waitTimeout, waitInterval time.Duration) (*api.TLSCertificate, []byte, []byte, error) {
+func (m *Manager) waitAndDownload(ctx context.Context, certificateID, action string, previousValidUntil *time.Time, waitTimeout, waitInterval time.Duration, stopAfterValidationPending bool) (*api.TLSCertificate, []byte, []byte, error) {
 	if waitTimeout <= 0 {
 		waitTimeout = 30 * time.Minute
 	}
@@ -741,8 +1025,13 @@ func (m *Manager) waitAndDownload(ctx context.Context, certificateID, action str
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		if err := m.ensureValidationRecords(ctx, cert); err != nil {
+		validationProvisioned, err := m.ensureValidationRecordsWithChange(ctx, cert)
+		if err != nil {
 			return nil, nil, nil, err
+		}
+		if cert.ActionRequired {
+			m.progress().WaitDone("certificate_id %s now requires completion in the regfish Console before issuance can continue", certificateID)
+			return nil, nil, nil, &actionRequiredError{Certificate: cert}
 		}
 
 		if readyForDownload(cert, action, previousValidUntil) {
@@ -775,6 +1064,13 @@ func (m *Manager) waitAndDownload(ctx context.Context, certificateID, action str
 			m.progress().WaitDone("reissue for certificate_id %s failed with status %s", certificateID, cert.Reissue.Status)
 			return nil, nil, nil, fmt.Errorf("reissue for certificate %s ended in status %s", certificateID, cert.Reissue.Status)
 		}
+		if stopAfterValidationPending && (validationProvisioned || certificateHasValidationDNSRecords(cert)) {
+			m.progress().WaitDone("certificate_id %s is still pending after DCV provisioning; provider-side OV/business validation can continue asynchronously", certificateID)
+			return nil, nil, nil, &providerValidationPendingError{
+				Certificate:           cert,
+				ValidationProvisioned: validationProvisioned,
+			}
+		}
 		if time.Now().After(deadline) {
 			m.progress().WaitDone("certificate_id %s timed out while waiting for issuance; rerun certbro renew to resume monitoring", certificateID)
 			return nil, nil, nil, &waitTimeoutError{CertificateID: certificateID, Status: cert.Status}
@@ -792,6 +1088,41 @@ func withPendingResumeHint(err error, managedName string) error {
 		return err
 	}
 	return fmt.Errorf("%w; rerun `certbro renew --name %s` to resume monitoring this pending request", err, managedName)
+}
+
+func pendingOrderMayPauseAfterValidation(meta deploy.PendingMetadata, managed *config.ManagedCertificate, cert *api.TLSCertificate) bool {
+	if meta.OrganizationRequired {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(meta.ProductValidationLevel)) {
+	case "ov", "ev":
+		return true
+	}
+	if cert != nil {
+		if cert.ActionRequired || strings.EqualFold(strings.TrimSpace(cert.PendingReason), "organization_required") {
+			return true
+		}
+		if cert.OrganizationID > 0 || (cert.Organization != nil && cert.Organization.ID > 0) {
+			return true
+		}
+	}
+	if meta.OrganizationID > 0 {
+		return true
+	}
+	return managed != nil && managed.OrganizationID > 0
+}
+
+func certificateHasValidationDNSRecords(cert *api.TLSCertificate) bool {
+	if cert == nil {
+		return false
+	}
+	if cert.Validation != nil && cert.Validation.Method == "dns-cname-token" && len(cert.Validation.DNSRecords) > 0 {
+		return true
+	}
+	if cert.Reissue != nil && cert.Reissue.Validation != nil && cert.Reissue.Validation.Method == "dns-cname-token" && len(cert.Reissue.Validation.DNSRecords) > 0 {
+		return true
+	}
+	return false
 }
 
 func (m *Manager) lookupValidationCNAMERecords(ctx context.Context, fqdn string) ([]api.DNSRecord, string, error) {
@@ -874,6 +1205,9 @@ func (m *Manager) progress() progressReporter {
 
 func (m *Manager) applyRemoteState(managed *config.ManagedCertificate, cert *api.TLSCertificate) {
 	managed.CertificateID = cert.ID
+	if cert.OrganizationID > 0 {
+		managed.OrganizationID = cert.OrganizationID
+	}
 	managed.Status = cert.Status
 	managed.OrderState = cert.OrderState
 	managed.ValidFrom = cert.ValidFrom
@@ -1030,5 +1364,31 @@ func sleepContext(ctx context.Context, duration time.Duration) error {
 		return ctx.Err()
 	case <-timer.C:
 		return nil
+	}
+}
+
+func effectiveBaseValidityDays(preferred, fallback int) int {
+	if preferred > 0 {
+		return preferred
+	}
+	return fallback
+}
+
+func populateIssuedValidityDetails(result *OperationResult, purchasedValidityDays int, validFrom, validUntil *time.Time) {
+	if result == nil {
+		return
+	}
+	if purchasedValidityDays > 0 {
+		result.PurchasedValidityDays = purchasedValidityDays
+	}
+	if effectiveValidityDays, ok := config.EffectiveIssuedValidityDays(validFrom, validUntil); ok {
+		result.EffectiveValidityDays = effectiveValidityDays
+		result.HasEffectiveValidity = true
+	}
+	if renewalBonusDays, ok := config.ConfirmedRenewalBonusDays(purchasedValidityDays, validFrom, validUntil); ok {
+		if renewalBonusDays > 0 {
+			result.RenewalBonusDays = renewalBonusDays
+			result.HasRenewalBonus = true
+		}
 	}
 }

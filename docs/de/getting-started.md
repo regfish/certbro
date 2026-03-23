@@ -29,13 +29,12 @@ curl -fsSL https://install.certbro.com/rf | CERTBRO_VERSION=v0.1.0 sh
 
 ## Konfiguration
 
-Standardmäßig nutzt `certbro` `/etc/certbro/state.json` und `/etc/certbro`. Für Server-Deployments bleiben damit Konfiguration und verwalteter Zertifikatszustand an einem Ort:
+Standardmäßig nutzt `certbro` `/etc/certbro/state.json` und `/etc/certbro`. Für Server-Deployments bleiben damit Konfiguration und verwalteter Zertifikatszustand an einem Ort. Die folgenden Befehle bauen darauf auf:
 
 ```sh
 sudo mkdir -p /etc/certbro
 
-sudo certbro --state-file /etc/certbro/state.json configure \
-  --api-key YOUR_REGFISH_API_KEY
+sudo certbro configure --api-key YOUR_REGFISH_API_KEY
 ```
 
 `certbro configure` validiert den API-Key, bevor er gespeichert wird. Befehle mit API-Zugriff laufen nur mit einem verifizierten konfigurierten Key.
@@ -43,13 +42,13 @@ sudo certbro --state-file /etc/certbro/state.json configure \
 ## Erstes Zertifikat bestellen
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json issue \
+sudo certbro issue \
   --name example-com \
   --common-name example.com \
-  --product RapidSSL \
-  --webserver nginx \
-  --output-dir /etc/certbro/example.com
+  --webserver nginx
 ```
+
+Ohne explizites `--output-dir` schreibt `certbro` bei den Linux-Defaults nach `/etc/certbro/example.com`.
 
 Wenn `--validity-days` nicht gesetzt ist, wählt `certbro` automatisch einen datumsabhängigen Default mit einem Sicherheitspuffer von einem Tag vor jedem CA/B-Forum-Stichtag. Die aktuellen Defaults sind `199` Tage ab `2026-03-14`, `99` Tage ab `2027-03-14` und `46` Tage ab `2029-03-14`.
 
@@ -64,7 +63,7 @@ Nach erfolgreicher Bestellung schreibt `certbro` unter anderem:
 - `/etc/certbro/example.com/live/metadata.json`
 - `/etc/certbro/example.com/archive/<timestamp>/...`
 
-Wenn die Bestellung noch `pending` ist, bleibt temporärer Order-Zustand unter `/etc/certbro/example.com/pending/` erhalten. Spätere `certbro renew`-Läufe setzen diesen Vorgang automatisch fort.
+Wenn die Bestellung noch `pending` ist, bleibt temporärer Order-Zustand unter `/etc/certbro/example.com/pending/` erhalten. Spätere `certbro renew`-Läufe setzen diesen Vorgang automatisch fort. Bei OV- oder Business-Bestellungen kann dieser Pending-Zustand zusätzlich eine Console-`completion_url` unter `/my/certs/...` enthalten; diesen Schritt dort abschließen und danach denselben Vorgang mit `certbro renew` finalisieren.
 
 ## Webserver-Integration
 
@@ -79,12 +78,11 @@ Unterstütztes eingebautes Verhalten für Validierung und Reload:
 Beispiel:
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json issue \
+sudo certbro issue \
   --name example-com \
   --common-name example.com \
   --webserver nginx \
-  --webserver-config /etc/nginx/nginx.conf \
-  --output-dir /etc/certbro/example.com
+  --webserver-config /etc/nginx/nginx.conf
 ```
 
 ## Nächste Schritte

@@ -32,13 +32,8 @@ Diese Kommandos zuerst ausführen und die Werte anpassen:
 export REGFISH_API_KEY='YOUR_REGFISH_API_KEY'
 export HOST_FQDN='example.certbro.com'
 export CERTBRO_NAME='example-certbro-com'
-export CERTBRO_PRODUCT='RapidSSL'
-export CERTBRO_VALIDITY_DAYS='3'
-export CERTBRO_RENEW_BEFORE_DAYS='2'
-export CERTBRO_REISSUE_LEAD_DAYS='2'
 export WEBROOT="/var/www/${HOST_FQDN}/html"
 export CERTBRO_DIR="/etc/certbro/${HOST_FQDN}"
-export CERTBRO_STATE_FILE='/etc/certbro/state.json'
 ```
 
 ## 2. Ubuntu aktualisieren, nginx installieren und Firewall aktivieren
@@ -218,35 +213,29 @@ Dadurch wird der verifizierte API-Key im lokalen certbro-State gespeichert:
 ```sh
 sudo mkdir -p /etc/certbro
 
-sudo certbro --state-file "${CERTBRO_STATE_FILE}" configure \
-  --api-key "${REGFISH_API_KEY}"
+sudo certbro configure --api-key "${REGFISH_API_KEY}"
 ```
 
 ## 7. Zertifikat bestellen
 
-Zertifikatsverzeichnis anlegen und Zertifikat bestellen:
+Zertifikat bestellen. Mit den Linux-Defaults schreibt `certbro` nach `${CERTBRO_DIR}`:
 
 ```sh
-sudo certbro --state-file "${CERTBRO_STATE_FILE}" issue \
+sudo certbro issue \
   --name "${CERTBRO_NAME}" \
   --common-name "${HOST_FQDN}" \
-  --product "${CERTBRO_PRODUCT}" \
-  --validity-days "${CERTBRO_VALIDITY_DAYS}" \
-  --renew-before-days "${CERTBRO_RENEW_BEFORE_DAYS}" \
-  --reissue-lead-days "${CERTBRO_REISSUE_LEAD_DAYS}" \
   --webserver nginx \
-  --webserver-config /etc/nginx/nginx.conf \
-  --key-type ecdsa \
-  --ecdsa-curve p256 \
-  --output-dir "${CERTBRO_DIR}"
+  --webserver-config /etc/nginx/nginx.conf
 ```
+
+Der Befehl oben nutzt das Default-DV-Produkt und die schedule-aware Default-Laufzeit. Wenn ein anderes Produkt oder eine kürzere Testlaufzeit gewünscht ist, einfach gezielt nicht-defaultige Flags wie `--product SecureSite` oder `--validity-days 30` ergänzen.
 
 Was während `certbro issue` passiert:
 
 - `certbro` erzeugt lokal einen frischen Private Key und CSR
 - es legt die TLS-Bestellung über die regfish TLS API an
 - es provisioniert automatisch die benötigten `dns-cname-token`-DCV-Records über die regfish DNS API
-- es wartet auf die Ausstellung
+- in diesem DV-Beispiel wartet es auf die Ausstellung
 - es lädt das Zertifikat herunter und deployt es auf stabile Pfade unter `${CERTBRO_DIR}/live/`
 - weil `--webserver nginx` gesetzt ist, validiert es die nginx-Konfiguration und reloadet nginx nach dem Deployment
 
@@ -309,7 +298,7 @@ curl -I "https://${HOST_FQDN}"
 `systemd`-Service und Timer installieren:
 
 ```sh
-sudo certbro --state-file "${CERTBRO_STATE_FILE}" install --certificates-dir /etc/certbro
+sudo certbro install
 ```
 
 Timer prüfen:
@@ -324,25 +313,25 @@ sudo systemctl list-timers certbro.timer --all
 Verwalteten Zertifikatszustand anzeigen:
 
 ```sh
-sudo certbro --state-file "${CERTBRO_STATE_FILE}" list
+sudo certbro list
 ```
 
 Regulären Renewal-Lauf starten:
 
 ```sh
-sudo certbro --state-file "${CERTBRO_STATE_FILE}" renew --name "${CERTBRO_NAME}"
+sudo certbro renew --name "${CERTBRO_NAME}"
 ```
 
 Wenn der komplette Renewal-Pfad sofort getestet werden soll, kann er erzwungen werden:
 
 ```sh
-sudo certbro --state-file "${CERTBRO_STATE_FILE}" renew \
+sudo certbro renew \
   --name "${CERTBRO_NAME}" \
   --force \
-  --validity-days "${CERTBRO_VALIDITY_DAYS}"
+  --validity-days 30
 ```
 
-Das `3`-Tage-Beispiel funktioniert nur, weil die gespeicherten Lead-Tage auf `2` gesetzt wurden. `certbro` lehnt Laufzeiten ab, die nicht größer sind als die Renewal-Lead-Tage.
+Wenn sehr kurze Laufzeiten getestet werden sollen, müssen `--renew-before-days` und `--reissue-lead-days` unter der gekauften Basislaufzeit bleiben. Werte, die sofort wieder in das Renewal- oder Reissue-Fenster führen würden, lehnt `certbro` ab.
 
 `--force` nur verwenden, wenn bewusst ein echter Renewal- oder Reissue-Flow für Tests ausgelöst werden soll.
 

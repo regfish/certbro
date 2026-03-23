@@ -21,15 +21,15 @@ It also derives matching output directories:
 - `<output-dir-base>-rsa`
 - `<output-dir-base>-ecdsa`
 
+If `--output-dir-base` is omitted, `certbro issue-pair` uses `<certificates-dir>/<common-name>` before appending those suffixes.
+
 Example:
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json issue-pair \
+sudo certbro issue-pair \
   --name-base example-com \
   --common-name example.com \
   --dns-name www.example.com \
-  --product RapidSSL \
-  --output-dir-base /etc/certbro/example.com \
   --webserver nginx \
   --webserver-config /etc/nginx/nginx.conf
 ```
@@ -60,14 +60,15 @@ With this configuration, TLS clients can negotiate the most suitable certificate
 Both managed certificates remain independent renewal units. They can be renewed:
 
 - together via `certbro renew`
-- together via `certbro --certificates-dir /etc/certbro renew`
 - individually via `certbro renew --name example-com-rsa` and `certbro renew --name example-com-ecdsa`
+
+If the pair lives below a non-default root, add `--certificates-dir /path/to/certbro`.
 
 Example:
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json renew --name example-com-rsa
-sudo certbro --state-file /etc/certbro/state.json renew --name example-com-ecdsa
+sudo certbro renew --name example-com-rsa
+sudo certbro renew --name example-com-ecdsa
 ```
 
 If both certificates are configured with `--webserver nginx`, each successful renewal validates and reloads `nginx` after deployment.

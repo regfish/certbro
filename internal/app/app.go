@@ -194,7 +194,11 @@ func (a *App) runList(args []string, store *config.Store) error {
 	})
 
 	if asJSON {
-		raw, err := json.MarshalIndent(managed, "", "  ")
+		views := make([]managedCertificateListView, 0, len(managed))
+		for _, cert := range managed {
+			views = append(views, managedCertificateView(cert, loadPendingMetadata(cert.OutputDir)))
+		}
+		raw, err := json.MarshalIndent(views, "", "  ")
 		if err != nil {
 			return err
 		}
@@ -223,10 +227,23 @@ func (a *App) runList(args []string, store *config.Store) error {
 			fmt.Printf("  rsa_bits: %d\n", cert.RSABits)
 		}
 		fmt.Printf("  status: %s\n", emptyFallback(cert.Status, "-"))
+		if cert.OrganizationID > 0 {
+			fmt.Printf("  organization_id: %d\n", cert.OrganizationID)
+		}
+		if cert.ValidityDays > 0 {
+			fmt.Printf("  purchased_validity_days: %d\n", cert.ValidityDays)
+		}
+		if effectiveValidityDays, ok := config.EffectiveIssuedValidityDays(cert.ValidFrom, cert.ValidUntil); ok {
+			fmt.Printf("  effective_validity_days: %d\n", effectiveValidityDays)
+		}
+		if renewalBonusDays, ok := config.ConfirmedRenewalBonusDays(cert.ValidityDays, cert.ValidFrom, cert.ValidUntil); ok && renewalBonusDays > 0 {
+			fmt.Printf("  renewal_bonus_days: %d\n", renewalBonusDays)
+		}
 		fmt.Printf("  valid_until: %s\n", formatOptionalTime(cert.ValidUntil))
 		fmt.Printf("  contract_valid_until: %s\n", formatOptionalTime(cert.ContractValidUntil))
 		fmt.Printf("  output_dir: %s\n", cert.OutputDir)
 		fmt.Printf("  pending_action: %s\n", emptyFallback(cert.PendingAction, "-"))
+		printPendingMetadataSummary(loadPendingMetadata(cert.OutputDir), "  ")
 	}
 	return nil
 }
@@ -239,7 +256,7 @@ func (a *App) runUpdate(args []string, root rootOptions, store *config.Store) er
 	var name string
 	validityDays := -1
 	fs.StringVar(&name, "name", "", "managed certificate name")
-	fs.IntVar(&validityDays, "validity-days", validityDays, "requested certificate validity in days for future renewal orders")
+	fs.IntVar(&validityDays, "validity-days", validityDays, "purchased base certificate validity in days for future renewal orders")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -277,7 +294,7 @@ func (a *App) runUpdate(args []string, root rootOptions, store *config.Store) er
 
 	fmt.Printf("%s: updated\n", updated.Name)
 	fmt.Printf("certificate_id: %s\n", emptyFallback(updated.CertificateID, "-"))
-	fmt.Printf("validity_days: %d\n", updated.ValidityDays)
+	fmt.Printf("purchased_validity_days: %d\n", updated.ValidityDays)
 	return nil
 }
 
@@ -309,12 +326,12 @@ func (a *App) runIssue(ctx context.Context, args []string, root rootOptions, sto
 	fs.StringVar(&commonName, "common-name", "", "certificate common name")
 	fs.Var(&dnsNames, "dns-name", "additional SAN DNS name, repeatable")
 	fs.StringVar(&product, "product", "RapidSSL", "regfish TLS product")
-	fs.StringVar(&outputDir, "output-dir", "", "output directory for certificate material")
+	fs.StringVar(&outputDir, "output-dir", "", "output directory for certificate material; defaults to <certificates-dir>/<common-name>")
 	fs.StringVar(&installHook, "install-hook", "", "shell command executed after successful deploy")
 	fs.StringVar(&webserver, "webserver", "", "reload the given webserver after deploy: nginx, apache, or caddy")
 	fs.StringVar(&webserverConfig, "webserver-config", "", "optional webserver config path used for validation/reload")
-	fs.IntVar(&orgID, "org-id", 0, "optional organization id")
-	fs.IntVar(&validityDays, "validity-days", defaultValidityDays, "requested certificate validity in days")
+	fs.IntVar(&orgID, "org-id", 0, "optional organization id to pre-link OV/business orders")
+	fs.IntVar(&validityDays, "validity-days", defaultValidityDays, "purchased base certificate validity in days")
 	fs.StringVar(&keyType, "key-type", config.DefaultKeyType, "private key type: rsa or ecdsa")
 	fs.IntVar(&rsaBits, "rsa-bits", config.DefaultRSABits, "RSA private key size")
 	fs.StringVar(&ecdsaCurve, "ecdsa-curve", config.DefaultECDSACurve, "ECDSA curve: p256, p384, or p521")
@@ -327,11 +344,12 @@ func (a *App) runIssue(ctx context.Context, args []string, root rootOptions, sto
 		return err
 	}
 
-	if strings.TrimSpace(commonName) == "" {
+	commonName = trimCommonName(commonName)
+	if commonName == "" {
 		return fmt.Errorf("--common-name is required")
 	}
 	if strings.TrimSpace(outputDir) == "" {
-		return fmt.Errorf("--output-dir is required")
+		outputDir = defaultManagedOutputDir(root.CertificatesDir, commonName)
 	}
 	if err := config.ValidateValidityDaysAt(validityDays, time.Now().UTC()); err != nil {
 		return err
@@ -346,7 +364,7 @@ func (a *App) runIssue(ctx context.Context, args []string, root rootOptions, sto
 		return err
 	}
 	if name == "" {
-		name = strings.TrimSpace(strings.ToLower(commonName))
+		name = strings.ToLower(commonName)
 	}
 	if existing, _ := store.FindManagedCertificate(name); existing != nil {
 		return fmt.Errorf("managed certificate %q already exists", name)
@@ -357,6 +375,7 @@ func (a *App) runIssue(ctx context.Context, args []string, root rootOptions, sto
 		return err
 	}
 	manager := NewManager(client, store, root.StateFile)
+	manager.CertificatesDir = configuredCertificatesDir(root.CertificatesDir)
 	if quiet {
 		manager.Progress = nopProgressReporter{}
 	} else {
@@ -369,7 +388,7 @@ func (a *App) runIssue(ctx context.Context, args []string, root rootOptions, sto
 	}
 	result, err := manager.Issue(ctx, config.ManagedCertificate{
 		Name:            name,
-		CommonName:      strings.TrimSpace(strings.TrimSuffix(commonName, ".")),
+		CommonName:      commonName,
 		DNSNames:        certcrypto.NormalizeDNSNames("", dnsNames),
 		Product:         product,
 		OrganizationID:  orgID,
@@ -390,7 +409,11 @@ func (a *App) runIssue(ctx context.Context, args []string, root rootOptions, sto
 
 	fmt.Printf("%s: %s\n", result.Name, result.Message)
 	fmt.Printf("certificate_id: %s\n", result.CertificateID)
-	fmt.Printf("live dir: %s\n", result.LiveDir)
+	printIssuedValiditySummary(result)
+	printPendingCompletionDetails(result, "")
+	if result.LiveDir != "" {
+		fmt.Printf("live dir: %s\n", result.LiveDir)
+	}
 	return nil
 }
 
@@ -421,12 +444,12 @@ func (a *App) runIssuePair(ctx context.Context, args []string, root rootOptions,
 	fs.StringVar(&commonName, "common-name", "", "certificate common name")
 	fs.Var(&dnsNames, "dns-name", "additional SAN DNS name, repeatable")
 	fs.StringVar(&product, "product", "RapidSSL", "regfish TLS product")
-	fs.StringVar(&outputDirBase, "output-dir-base", "", "base output directory; certbro adds -rsa and -ecdsa")
+	fs.StringVar(&outputDirBase, "output-dir-base", "", "base output directory; defaults to <certificates-dir>/<common-name> and certbro adds -rsa and -ecdsa")
 	fs.StringVar(&installHook, "install-hook", "", "shell command executed after successful deploy of the ECDSA certificate")
 	fs.StringVar(&webserver, "webserver", "", "reload the given webserver after both certificates are in place: nginx, apache, or caddy")
 	fs.StringVar(&webserverConfig, "webserver-config", "", "optional webserver config path used for validation/reload")
-	fs.IntVar(&orgID, "org-id", 0, "optional organization id")
-	fs.IntVar(&validityDays, "validity-days", defaultValidityDays, "requested certificate validity in days")
+	fs.IntVar(&orgID, "org-id", 0, "optional organization id to pre-link OV/business orders")
+	fs.IntVar(&validityDays, "validity-days", defaultValidityDays, "purchased base certificate validity in days")
 	fs.IntVar(&rsaBits, "rsa-bits", config.DefaultRSABits, "RSA private key size")
 	fs.StringVar(&ecdsaCurve, "ecdsa-curve", config.DefaultECDSACurve, "ECDSA curve: p256, p384, or p521")
 	fs.IntVar(&renewBeforeDays, "renew-before-days", config.DefaultRenewBeforeDays, "days before certificate expiry to place a renewal order")
@@ -438,11 +461,12 @@ func (a *App) runIssuePair(ctx context.Context, args []string, root rootOptions,
 		return err
 	}
 
-	if strings.TrimSpace(commonName) == "" {
+	commonName = trimCommonName(commonName)
+	if commonName == "" {
 		return fmt.Errorf("--common-name is required")
 	}
 	if strings.TrimSpace(outputDirBase) == "" {
-		return fmt.Errorf("--output-dir-base is required")
+		outputDirBase = defaultManagedOutputDir(root.CertificatesDir, commonName)
 	}
 	if err := config.ValidateValidityDaysAt(validityDays, time.Now().UTC()); err != nil {
 		return err
@@ -459,7 +483,7 @@ func (a *App) runIssuePair(ctx context.Context, args []string, root rootOptions,
 	}
 
 	if nameBase == "" {
-		nameBase = strings.TrimSpace(strings.ToLower(strings.TrimSuffix(commonName, ".")))
+		nameBase = strings.ToLower(commonName)
 	}
 	absOutputDirBase, err := filepath.Abs(outputDirBase)
 	if err != nil {
@@ -468,7 +492,7 @@ func (a *App) runIssuePair(ctx context.Context, args []string, root rootOptions,
 
 	rsaManaged, ecdsaManaged := buildIssuePairManagedCertificates(issuePairOptions{
 		NameBase:        nameBase,
-		CommonName:      strings.TrimSpace(strings.TrimSuffix(commonName, ".")),
+		CommonName:      commonName,
 		DNSNames:        certcrypto.NormalizeDNSNames("", dnsNames),
 		Product:         product,
 		OutputDirBase:   absOutputDirBase,
@@ -494,6 +518,7 @@ func (a *App) runIssuePair(ctx context.Context, args []string, root rootOptions,
 		return err
 	}
 	manager := NewManager(client, store, root.StateFile)
+	manager.CertificatesDir = configuredCertificatesDir(root.CertificatesDir)
 	if quiet {
 		manager.Progress = nopProgressReporter{}
 	} else {
@@ -520,10 +545,18 @@ func (a *App) runIssuePair(ctx context.Context, args []string, root rootOptions,
 
 	fmt.Printf("%s: %s\n", rsaResult.Name, rsaResult.Message)
 	fmt.Printf("  certificate_id: %s\n", rsaResult.CertificateID)
-	fmt.Printf("  live dir: %s\n", rsaResult.LiveDir)
+	printIssuedValiditySummaryIndented(rsaResult, "  ")
+	printPendingCompletionDetails(rsaResult, "  ")
+	if rsaResult.LiveDir != "" {
+		fmt.Printf("  live dir: %s\n", rsaResult.LiveDir)
+	}
 	fmt.Printf("%s: %s\n", ecdsaResult.Name, ecdsaResult.Message)
 	fmt.Printf("  certificate_id: %s\n", ecdsaResult.CertificateID)
-	fmt.Printf("  live dir: %s\n", ecdsaResult.LiveDir)
+	printIssuedValiditySummaryIndented(ecdsaResult, "  ")
+	printPendingCompletionDetails(ecdsaResult, "  ")
+	if ecdsaResult.LiveDir != "" {
+		fmt.Printf("  live dir: %s\n", ecdsaResult.LiveDir)
+	}
 	return nil
 }
 
@@ -548,7 +581,7 @@ func (a *App) runImport(ctx context.Context, args []string, root rootOptions, st
 
 	fs.StringVar(&certificateID, "certificate-id", "", "existing TLS certificate id from the regfish API")
 	fs.StringVar(&name, "name", "", "managed certificate name")
-	fs.StringVar(&outputDir, "output-dir", "", "output directory for certificate material")
+	fs.StringVar(&outputDir, "output-dir", "", "output directory for certificate material; defaults to <certificates-dir>/<common-name>")
 	fs.StringVar(&installHook, "install-hook", "", "shell command executed after successful deploy")
 	fs.StringVar(&webserver, "webserver", "", "reload the given webserver after deploy: nginx, apache, or caddy")
 	fs.StringVar(&webserverConfig, "webserver-config", "", "optional webserver config path used for validation/reload")
@@ -566,9 +599,6 @@ func (a *App) runImport(ctx context.Context, args []string, root rootOptions, st
 
 	if strings.TrimSpace(certificateID) == "" {
 		return fmt.Errorf("--certificate-id is required")
-	}
-	if strings.TrimSpace(outputDir) == "" {
-		return fmt.Errorf("--output-dir is required")
 	}
 	if err := deploy.ValidateWebserverIntegration(deploy.WebserverIntegration{
 		Kind:       webserver,
@@ -600,14 +630,10 @@ func (a *App) runImport(ctx context.Context, args []string, root rootOptions, st
 		return err
 	}
 	manager := NewManager(client, store, root.StateFile)
-
-	absOutputDir, err := filepath.Abs(outputDir)
-	if err != nil {
-		return err
-	}
+	manager.CertificatesDir = configuredCertificatesDir(root.CertificatesDir)
 	result, err := manager.Import(ctx, config.ManagedCertificate{
 		Name:            name,
-		OutputDir:       absOutputDir,
+		OutputDir:       strings.TrimSpace(outputDir),
 		InstallHook:     installHook,
 		Webserver:       webserver,
 		WebserverConfig: webserverConfig,
@@ -625,6 +651,8 @@ func (a *App) runImport(ctx context.Context, args []string, root rootOptions, st
 
 	fmt.Printf("%s: %s\n", result.Name, result.Message)
 	fmt.Printf("certificate_id: %s\n", result.CertificateID)
+	printIssuedValiditySummary(result)
+	printPendingCompletionDetails(result, "")
 	if result.LiveDir != "" {
 		fmt.Printf("live dir: %s\n", result.LiveDir)
 	}
@@ -644,7 +672,7 @@ func (a *App) runRenew(ctx context.Context, args []string, root rootOptions, sto
 
 	fs.Var(&names, "name", "managed certificate name to renew, repeatable")
 	fs.BoolVar(&force, "force", false, "force renewal even if not due")
-	fs.IntVar(&validityDays, "validity-days", 0, "override requested certificate validity in days for this renewal run")
+	fs.IntVar(&validityDays, "validity-days", 0, "override purchased base certificate validity in days for this renewal run")
 	fs.DurationVar(&waitTimeout, "wait-timeout", 30*time.Minute, "maximum time to wait for issuance")
 	fs.DurationVar(&waitInterval, "wait-interval", 30*time.Second, "poll interval while waiting for issuance")
 	fs.BoolVar(&quiet, "quiet", false, "suppress progress output during renewals")
@@ -682,6 +710,7 @@ func (a *App) runRenew(ctx context.Context, args []string, root rootOptions, sto
 		return err
 	}
 	manager := NewManager(client, renewStore, root.StateFile)
+	manager.CertificatesDir = configuredCertificatesDir(root.CertificatesDir)
 	if quiet {
 		manager.Progress = nopProgressReporter{}
 	} else {
@@ -699,9 +728,13 @@ func (a *App) runRenew(ctx context.Context, args []string, root rootOptions, sto
 			fmt.Printf(" (%s)", result.Message)
 		}
 		fmt.Println()
-		if result.Changed {
+		if result.Changed || result.ActionRequired {
 			fmt.Printf("  certificate_id: %s\n", result.CertificateID)
-			fmt.Printf("  live dir: %s\n", result.LiveDir)
+			printIssuedValiditySummaryIndented(&result, "  ")
+			printPendingCompletionDetails(&result, "  ")
+			if result.LiveDir != "" {
+				fmt.Printf("  live dir: %s\n", result.LiveDir)
+			}
 		}
 	}
 	return nil
@@ -803,8 +836,8 @@ type clientConfig struct {
 
 func (a *App) clientConfig(root rootOptions, store *config.Store) clientConfig {
 	return clientConfig{
-		APIKey:            firstNonEmpty(strings.TrimSpace(root.APIKey), strings.TrimSpace(os.Getenv("REGFISH_API_KEY")), strings.TrimSpace(store.APIKey)),
-		APIBaseURL:        firstNonEmpty(strings.TrimSpace(root.APIBaseURL), strings.TrimSpace(os.Getenv("REGFISH_API_BASE")), strings.TrimSpace(store.APIBaseURL), api.DefaultBaseURL),
+		APIKey:            firstNonEmpty(strings.TrimSpace(root.APIKey), strings.TrimSpace(store.APIKey)),
+		APIBaseURL:        firstNonEmpty(strings.TrimSpace(root.APIBaseURL), strings.TrimSpace(store.APIBaseURL), api.DefaultBaseURL),
 		ContactEmail:      firstNonEmpty(strings.TrimSpace(os.Getenv("CERTBRO_CONTACT_EMAIL")), strings.TrimSpace(store.ContactEmail)),
 		UserAgentInstance: strings.TrimSpace(store.UserAgentInstance),
 	}
@@ -905,6 +938,19 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func configuredCertificatesDir(certificatesDir string) string {
+	return firstNonEmpty(strings.TrimSpace(certificatesDir), config.DefaultCertificatesDir)
+}
+
+func trimCommonName(commonName string) string {
+	return strings.TrimSuffix(strings.TrimSpace(commonName), ".")
+}
+
+func defaultManagedOutputDir(certificatesDir, commonName string) string {
+	commonName = strings.ToLower(trimCommonName(commonName))
+	return filepath.Join(configuredCertificatesDir(certificatesDir), commonName)
+}
+
 func renewLockPath(root rootOptions) string {
 	if lockPath := strings.TrimSpace(os.Getenv("CERTBRO_RENEW_LOCK_FILE")); lockPath != "" {
 		return lockPath
@@ -923,6 +969,96 @@ func formatOptionalTime(ts *time.Time) string {
 		return "-"
 	}
 	return ts.UTC().Format(time.RFC3339)
+}
+
+type managedCertificateListView struct {
+	config.ManagedCertificate
+	EffectiveValidityDays *int   `json:"effective_validity_days,omitempty"`
+	RenewalBonusDays      *int   `json:"renewal_bonus_days,omitempty"`
+	ActionRequired        *bool  `json:"action_required,omitempty"`
+	PendingReason         string `json:"pending_reason,omitempty"`
+	PendingMessage        string `json:"pending_message,omitempty"`
+	CompletionURL         string `json:"completion_url,omitempty"`
+}
+
+func managedCertificateView(cert config.ManagedCertificate, pendingMeta *deploy.PendingMetadata) managedCertificateListView {
+	view := managedCertificateListView{ManagedCertificate: cert}
+	if effectiveValidityDays, ok := config.EffectiveIssuedValidityDays(cert.ValidFrom, cert.ValidUntil); ok {
+		view.EffectiveValidityDays = &effectiveValidityDays
+	}
+	if renewalBonusDays, ok := config.ConfirmedRenewalBonusDays(cert.ValidityDays, cert.ValidFrom, cert.ValidUntil); ok && renewalBonusDays > 0 {
+		view.RenewalBonusDays = &renewalBonusDays
+	}
+	if pendingMeta != nil {
+		view.ActionRequired = &pendingMeta.ActionRequired
+		view.PendingReason = strings.TrimSpace(pendingMeta.PendingReason)
+		view.PendingMessage = strings.TrimSpace(pendingMeta.PendingMessage)
+		view.CompletionURL = strings.TrimSpace(pendingMeta.CompletionURL)
+	}
+	return view
+}
+
+func loadPendingMetadata(outputDir string) *deploy.PendingMetadata {
+	if strings.TrimSpace(outputDir) == "" {
+		return nil
+	}
+	metadata, err := deploy.LoadPendingMetadata(outputDir)
+	if err != nil {
+		return nil
+	}
+	return metadata
+}
+
+func printIssuedValiditySummary(result *OperationResult) {
+	printIssuedValiditySummaryIndented(result, "")
+}
+
+func printIssuedValiditySummaryIndented(result *OperationResult, indent string) {
+	if result == nil {
+		return
+	}
+	if result.PurchasedValidityDays > 0 {
+		fmt.Printf("%spurchased_validity_days: %d\n", indent, result.PurchasedValidityDays)
+	}
+	if result.HasEffectiveValidity {
+		fmt.Printf("%seffective_validity_days: %d\n", indent, result.EffectiveValidityDays)
+	}
+	if result.HasRenewalBonus && result.RenewalBonusDays > 0 {
+		fmt.Printf("%srenewal_bonus_days: %d\n", indent, result.RenewalBonusDays)
+	}
+}
+
+func printPendingCompletionDetails(result *OperationResult, indent string) {
+	if result == nil || !result.ActionRequired {
+		return
+	}
+	if strings.TrimSpace(result.PendingReason) != "" {
+		fmt.Printf("%spending_reason: %s\n", indent, result.PendingReason)
+	}
+	if strings.TrimSpace(result.PendingMessage) != "" {
+		fmt.Printf("%spending_message: %s\n", indent, result.PendingMessage)
+	}
+	if strings.TrimSpace(result.CompletionURL) != "" {
+		fmt.Printf("%scompletion_url: %s\n", indent, result.CompletionURL)
+	}
+}
+
+func printPendingMetadataSummary(metadata *deploy.PendingMetadata, indent string) {
+	if metadata == nil {
+		return
+	}
+	if metadata.ActionRequired {
+		fmt.Printf("%saction_required: true\n", indent)
+	}
+	if strings.TrimSpace(metadata.PendingReason) != "" {
+		fmt.Printf("%spending_reason: %s\n", indent, metadata.PendingReason)
+	}
+	if strings.TrimSpace(metadata.PendingMessage) != "" {
+		fmt.Printf("%spending_message: %s\n", indent, metadata.PendingMessage)
+	}
+	if strings.TrimSpace(metadata.CompletionURL) != "" {
+		fmt.Printf("%scompletion_url: %s\n", indent, metadata.CompletionURL)
+	}
 }
 
 func emptyFallback(value, fallback string) string {

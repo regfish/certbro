@@ -7,11 +7,12 @@ Certificates ordered through the regfish UI can be brought under `certbro` manag
 ## Import for Renewal Management
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json import \
+sudo certbro import \
   --certificate-id 7K9QW3M2ZT8HJ \
-  --name example-com \
-  --output-dir /etc/certbro/example.com
+  --name example-com
 ```
+
+If `--output-dir` is omitted, `certbro` imports into `<certificates-dir>/<common-name>`, which is `/etc/certbro/example.com` with the Linux defaults.
 
 The imported certificate joins the normal `certbro renew` workflow.
 
@@ -20,10 +21,9 @@ The imported certificate joins the normal `certbro renew` workflow.
 If the matching private key is already available locally, `certbro` can deploy the currently issued certificate immediately:
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json import \
+sudo certbro import \
   --certificate-id 7K9QW3M2ZT8HJ \
   --name example-com \
-  --output-dir /etc/certbro/example.com \
   --private-key-file /etc/ssl/private/example.com.key \
   --webserver nginx
 ```

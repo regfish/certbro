@@ -33,13 +33,8 @@ Run these commands first and adjust the values:
 export REGFISH_API_KEY='YOUR_REGFISH_API_KEY'
 export HOST_FQDN='example.certbro.com'
 export CERTBRO_NAME='example-certbro-com'
-export CERTBRO_PRODUCT='RapidSSL'
-export CERTBRO_VALIDITY_DAYS='3'
-export CERTBRO_RENEW_BEFORE_DAYS='2'
-export CERTBRO_REISSUE_LEAD_DAYS='2'
 export WEBROOT="/var/www/${HOST_FQDN}/html"
 export CERTBRO_DIR="/etc/certbro/${HOST_FQDN}"
-export CERTBRO_STATE_FILE='/etc/certbro/state.json'
 ```
 
 ## 2. Update Ubuntu, install Apache, and enable the firewall
@@ -210,32 +205,28 @@ This stores the verified API key in the local certbro state:
 ```sh
 sudo mkdir -p /etc/certbro
 
-sudo certbro --state-file "${CERTBRO_STATE_FILE}" configure \
-  --api-key "${REGFISH_API_KEY}"
+sudo certbro configure --api-key "${REGFISH_API_KEY}"
 ```
 
 ## 7. Order the certificate
 
-Create a certificate directory and issue the certificate:
+Issue the certificate. With the Linux defaults, `certbro` writes to `${CERTBRO_DIR}`:
 
 ```sh
-sudo certbro --state-file "${CERTBRO_STATE_FILE}" issue \
+sudo certbro issue \
   --name "${CERTBRO_NAME}" \
   --common-name "${HOST_FQDN}" \
-  --product "${CERTBRO_PRODUCT}" \
-  --validity-days "${CERTBRO_VALIDITY_DAYS}" \
-  --renew-before-days "${CERTBRO_RENEW_BEFORE_DAYS}" \
-  --reissue-lead-days "${CERTBRO_REISSUE_LEAD_DAYS}" \
-  --webserver apache \
-  --output-dir "${CERTBRO_DIR}"
+  --webserver apache
 ```
+
+The command above uses the default DV product and the schedule-aware default lifetime. If you want a non-default product or a shorter lab lifetime, add non-default flags such as `--product SecureSite` or `--validity-days 30`.
 
 What happens during `certbro issue`:
 
 - `certbro` generates a fresh private key and CSR locally
 - it creates the TLS order through the regfish TLS API
 - it provisions the required `dns-cname-token` DCV records automatically through the regfish DNS API
-- it waits for issuance
+- for this DV example, it waits for issuance
 - it downloads and deploys the certificate to stable paths under `${CERTBRO_DIR}/live/`
 - because `--webserver apache` is set, it validates the Apache configuration and reloads Apache after deployment
 
@@ -292,7 +283,7 @@ curl -I "https://${HOST_FQDN}"
 Install the `systemd` service and timer:
 
 ```sh
-sudo certbro --state-file "${CERTBRO_STATE_FILE}" install --certificates-dir /etc/certbro
+sudo certbro install
 ```
 
 Check the timer:
@@ -307,25 +298,25 @@ sudo systemctl list-timers certbro.timer --all
 Check the managed certificate state:
 
 ```sh
-sudo certbro --state-file "${CERTBRO_STATE_FILE}" list
+sudo certbro list
 ```
 
 Run a regular renewal pass:
 
 ```sh
-sudo certbro --state-file "${CERTBRO_STATE_FILE}" renew --name "${CERTBRO_NAME}"
+sudo certbro renew --name "${CERTBRO_NAME}"
 ```
 
 If you want to test the full renewal path immediately, you can force it:
 
 ```sh
-sudo certbro --state-file "${CERTBRO_STATE_FILE}" renew \
+sudo certbro renew \
   --name "${CERTBRO_NAME}" \
   --force \
-  --validity-days "${CERTBRO_VALIDITY_DAYS}"
+  --validity-days 30
 ```
 
-The `3` day example only works because the managed lead times were set to `2` days. `certbro` rejects lifetimes that are not greater than the renewal lead times.
+If you experiment with very short lifetimes, keep `--renew-before-days` and `--reissue-lead-days` below the purchased base lifetime. `certbro` rejects values that would immediately re-enter the renewal or reissue window.
 
 Use `--force` only when you explicitly want to trigger a real renewal or reissue flow for testing.
 

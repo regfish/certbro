@@ -17,12 +17,20 @@ import (
 
 // PendingMetadata describes an unfinished issuance or reissue attempt on disk.
 type PendingMetadata struct {
-	Action        string    `json:"action"`
-	CertificateID string    `json:"certificate_id,omitempty"`
-	CommonName    string    `json:"common_name"`
-	DNSNames      []string  `json:"dns_names,omitempty"`
-	Product       string    `json:"product"`
-	RequestedAt   time.Time `json:"requested_at"`
+	Action                 string    `json:"action"`
+	CertificateID          string    `json:"certificate_id,omitempty"`
+	CommonName             string    `json:"common_name"`
+	DNSNames               []string  `json:"dns_names,omitempty"`
+	Product                string    `json:"product"`
+	ProductValidationLevel string    `json:"product_validation_level,omitempty"`
+	OrganizationRequired   bool      `json:"organization_required,omitempty"`
+	RequestedAt            time.Time `json:"requested_at"`
+	RequestedValidityDays  int       `json:"requested_validity_days,omitempty"`
+	OrganizationID         int       `json:"organization_id,omitempty"`
+	ActionRequired         bool      `json:"action_required,omitempty"`
+	PendingReason          string    `json:"pending_reason,omitempty"`
+	PendingMessage         string    `json:"pending_message,omitempty"`
+	CompletionURL          string    `json:"completion_url,omitempty"`
 }
 
 // PendingMaterial is the persisted key material required to resume a pending request.
@@ -47,6 +55,7 @@ type Artifact struct {
 	CSRPEM             []byte
 	FullChainPEM       []byte
 	BundleZIP          []byte
+	ValidityDays       int
 	ValidFrom          *time.Time
 	ValidUntil         *time.Time
 	ContractValidUntil *time.Time
@@ -91,6 +100,21 @@ func WritePending(outputDir string, material PendingMaterial) error {
 	return nil
 }
 
+// LoadPendingMetadata reloads only the persisted pending request metadata.
+func LoadPendingMetadata(outputDir string) (*PendingMetadata, error) {
+	pendingDir := filepath.Join(outputDir, "pending")
+	metaRaw, err := os.ReadFile(filepath.Join(pendingDir, "request.json"))
+	if err != nil {
+		return nil, fmt.Errorf("read pending request metadata: %w", err)
+	}
+
+	var metadata PendingMetadata
+	if err := json.Unmarshal(metaRaw, &metadata); err != nil {
+		return nil, fmt.Errorf("parse pending request metadata: %w", err)
+	}
+	return &metadata, nil
+}
+
 // LoadPending reloads previously persisted pending key material.
 func LoadPending(outputDir string) (*PendingMaterial, error) {
 	pendingDir := filepath.Join(outputDir, "pending")
@@ -102,20 +126,15 @@ func LoadPending(outputDir string) (*PendingMaterial, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read pending CSR: %w", err)
 	}
-	metaRaw, err := os.ReadFile(filepath.Join(pendingDir, "request.json"))
+	metadata, err := LoadPendingMetadata(outputDir)
 	if err != nil {
-		return nil, fmt.Errorf("read pending request metadata: %w", err)
-	}
-
-	var metadata PendingMetadata
-	if err := json.Unmarshal(metaRaw, &metadata); err != nil {
-		return nil, fmt.Errorf("parse pending request metadata: %w", err)
+		return nil, err
 	}
 
 	return &PendingMaterial{
 		PrivateKeyPEM: privateKeyPEM,
 		CSRPEM:        csrPEM,
-		Metadata:      metadata,
+		Metadata:      *metadata,
 	}, nil
 }
 
@@ -158,6 +177,18 @@ func WriteArtifacts(artifact Artifact) (*Result, error) {
 		"valid_from":           formatTime(artifact.ValidFrom),
 		"valid_until":          formatTime(artifact.ValidUntil),
 		"contract_valid_until": formatTime(artifact.ContractValidUntil),
+	}
+	if artifact.ValidityDays > 0 {
+		metadata["validity_days"] = artifact.ValidityDays
+	}
+	if effectiveValidityDays, ok := issuedValidityDays(artifact.ValidFrom, artifact.ValidUntil); ok {
+		metadata["effective_validity_days"] = effectiveValidityDays
+		if artifact.ValidityDays > 0 {
+			renewalBonusDays := effectiveValidityDays - artifact.ValidityDays
+			if renewalBonusDays > 0 {
+				metadata["renewal_bonus_days"] = renewalBonusDays
+			}
+		}
 	}
 	metadataRaw, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
@@ -271,4 +302,14 @@ func formatTime(ts *time.Time) string {
 		return ""
 	}
 	return ts.UTC().Format(time.RFC3339)
+}
+
+func issuedValidityDays(validFrom, validUntil *time.Time) (int, bool) {
+	if validFrom == nil || validUntil == nil {
+		return 0, false
+	}
+	if validUntil.Before(*validFrom) {
+		return 0, false
+	}
+	return int(validUntil.Sub(*validFrom).Hours()/24 + 0.5), true
 }

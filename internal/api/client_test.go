@@ -70,13 +70,17 @@ func TestListTLSProductsParsesCatalog(t *testing.T) {
 					"name": "RapidSSL",
 					"type": "dv",
 					"ca": "digicert",
-					"recommended": true
+					"recommended": true,
+					"validation_level": "dv",
+					"organization_required": false
 				},
 				{
 					"sku": "SecureSite",
 					"name": "Secure Site",
 					"type": "ov",
-					"ca": "digicert"
+					"ca": "digicert",
+					"validation_level": "ov",
+					"organization_required": true
 				}
 			]
 		}`))
@@ -102,8 +106,14 @@ func TestListTLSProductsParsesCatalog(t *testing.T) {
 	if products[0].SKU != "RapidSSL" || !products[0].Recommended {
 		t.Fatalf("products[0] = %#v", products[0])
 	}
+	if products[0].ValidationLevel != "dv" || products[0].OrganizationRequired {
+		t.Fatalf("products[0] validation fields = %#v", products[0])
+	}
 	if products[1].SKU != "SecureSite" {
 		t.Fatalf("products[1] = %#v", products[1])
+	}
+	if products[1].ValidationLevel != "ov" || !products[1].OrganizationRequired {
+		t.Fatalf("products[1] validation fields = %#v", products[1])
 	}
 }
 
@@ -120,20 +130,32 @@ func TestGetCertificateParsesCurrentOpenAPIFields(t *testing.T) {
 				"provider": "digicert",
 				"dns_names": ["example.com", "www.example.com"],
 				"order_state": "ISSUED",
+				"action_required": false,
+				"pending_reason": "validation_pending",
+				"pending_message": "The TLS certificate order is waiting for domain validation.",
+				"completion_url": "https://dash.regfish.com/my/certs/7K9QW3M2ZT8HJ/complete",
+				"organization_id": 42,
 				"revocation_scope": "certificate",
 				"revocation_pending_scope": "order",
 				"renewal_supported": true,
-				"reissue_supported": true,
-				"validity_days": 199,
-				"valid_from": "2026-03-18T10:00:00Z",
-				"valid_until": "2026-10-03T10:00:00Z",
-				"contract_valid_from": "2026-03-18T10:00:00Z",
-				"contract_valid_until": "2026-10-03T10:00:00Z",
-				"last_status_check": "2026-03-18T10:05:00Z",
+					"reissue_supported": true,
+					"validity_days": 199,
+					"renewal_bonus_days": 7,
+					"valid_from": "2026-03-18T10:00:00Z",
+					"valid_until": "2026-10-10T10:00:00Z",
+					"contract_valid_from": "2026-03-18T10:00:00Z",
+					"contract_valid_until": "2026-10-10T10:00:00Z",
+					"last_status_check": "2026-03-18T10:05:00Z",
 				"certificate_pem_available": true,
 				"order_cancellable": true,
 				"order_cancellation_mode": "revoke_issued",
-				"order_cancellable_until": "2026-03-20T10:00:00Z"
+				"order_cancellable_until": "2026-03-20T10:00:00Z",
+				"organization": {
+					"id": 42,
+					"name": "Example GmbH",
+					"status": "validated",
+					"usable_for_ordering": true
+				}
 			}
 		}`))
 	}))
@@ -158,8 +180,23 @@ func TestGetCertificateParsesCurrentOpenAPIFields(t *testing.T) {
 	if cert.RevocationScope != "certificate" || cert.RevocationPendingScope != "order" {
 		t.Fatalf("revocation scopes = %q / %q", cert.RevocationScope, cert.RevocationPendingScope)
 	}
+	if cert.ActionRequired {
+		t.Fatalf("ActionRequired = %v, want false", cert.ActionRequired)
+	}
+	if cert.PendingReason != "validation_pending" || cert.OrganizationID != 42 {
+		t.Fatalf("pending/org fields = %#v", cert)
+	}
+	if cert.CompletionURL != "https://dash.regfish.com/my/certs/7K9QW3M2ZT8HJ/complete" {
+		t.Fatalf("CompletionURL = %q", cert.CompletionURL)
+	}
+	if cert.Organization == nil || cert.Organization.Name != "Example GmbH" || !cert.Organization.UsableForOrdering {
+		t.Fatalf("Organization = %#v", cert.Organization)
+	}
 	if !cert.RenewalSupported {
 		t.Fatalf("RenewalSupported = %v, want true", cert.RenewalSupported)
+	}
+	if cert.RenewalBonusDays == nil || *cert.RenewalBonusDays != 7 {
+		t.Fatalf("RenewalBonusDays = %v, want 7", cert.RenewalBonusDays)
 	}
 	if !cert.OrderCancellable || cert.OrderCancellationMode != "revoke_issued" {
 		t.Fatalf("order cancellation fields = %#v", cert)

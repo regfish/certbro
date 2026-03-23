@@ -7,8 +7,7 @@ English version: [../en/linux-automation.md](../en/linux-automation.md)
 ## Timer installieren
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json install \
-  --certificates-dir /etc/certbro
+sudo certbro install
 ```
 
 Der installierte Timer führt standardmäßig stündlich `certbro renew` aus.
@@ -16,17 +15,13 @@ Der installierte Timer führt standardmäßig stündlich `certbro renew` aus.
 ## Zeitplan anpassen
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json install \
-  --certificates-dir /etc/certbro \
-  --on-calendar 'daily'
+sudo certbro install --on-calendar 'daily'
 ```
 
 ## Nur Unit-Dateien schreiben
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json install \
-  --certificates-dir /etc/certbro \
-  --skip-systemctl
+sudo certbro install --skip-systemctl
 ```
 
 ## Betriebshinweise
@@ -47,5 +42,5 @@ sudo systemctl list-timers certbro.timer --all
 Cron bleibt eine gültige Alternative:
 
 ```cron
-17 3 * * * /usr/local/bin/certbro --state-file /etc/certbro/state.json renew
+17 3 * * * /usr/local/bin/certbro renew
 ```

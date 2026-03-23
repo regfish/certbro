@@ -4,9 +4,9 @@ German version: [../de/validity-management.md](../de/validity-management.md)
 
 ## Overview
 
-`certbro` stores the requested lifetime per managed certificate and reuses it for future renewal orders and fresh new orders.
+`certbro` stores the purchased base lifetime per managed certificate and reuses it for future renewal orders and fresh new orders.
 
-For `example.com`, the stored lifetime can be changed at any time. `certbro` then uses the new value for later renewals as long as the value remains within the active schedule-aware limit.
+For `example.com`, the stored lifetime can be changed at any time. `certbro` then uses the new value as the purchased base validity for later renewals as long as the value remains within the active schedule-aware limit.
 
 ## Change the Stored Lifetime Manually
 
@@ -24,19 +24,18 @@ Then run the next renewal as usual:
 sudo certbro renew --name example-com
 ```
 
-If you want to replace the current certificate immediately with the new requested lifetime:
+If you want to replace the current certificate immediately with the new purchased base lifetime:
 
 ```sh
 sudo certbro renew --name example-com --force --validity-days 30
 ```
 
-For very short-lived certificates, keep the lead times below the requested lifetime. Example for a `3` day certificate:
+For very short-lived certificates, keep the lead times below the purchased base lifetime. Example for a `3` day certificate:
 
 ```sh
 sudo certbro issue \
   --name example-com \
   --common-name example.com \
-  --output-dir /etc/certbro/example.com \
   --validity-days 3 \
   --renew-before-days 2 \
   --reissue-lead-days 2
@@ -66,12 +65,14 @@ Example:
 
 - `example.com` was previously stored with `199` days
 - the renewal happens on or after `2027-03-14`
-- `certbro` automatically places the order with `99` days
-- after a successful renewal, the stored `validity_days` is updated as well
+- the next effective order uses `99` days
+- the stored `validity_days` is updated during renewal processing as the managed state is refreshed
 
 This auto-adjustment applies to stored values during renewal processing. Explicit CLI input remains strict:
 
 - `certbro issue --validity-days ...` is validated immediately
 - `certbro update --validity-days ...` is validated immediately
+- `certbro renew --validity-days ...` is validated immediately
+- the same timing rules also apply to `certbro issue-pair` and `certbro import`
 
 So `certbro` keeps existing managed certificates operational across future schedule changes, while still rejecting explicitly invalid new inputs.

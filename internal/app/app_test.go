@@ -4,8 +4,11 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +16,7 @@ import (
 
 	"github.com/regfish/certbro/internal/config"
 	certcrypto "github.com/regfish/certbro/internal/crypto"
+	"github.com/regfish/certbro/internal/deploy"
 	"github.com/regfish/certbro/internal/testutil"
 )
 
@@ -159,15 +163,26 @@ func TestBuildIssuePairManagedCertificates(t *testing.T) {
 	}
 }
 
+func TestDefaultManagedOutputDirUsesCertificatesDirAndNormalizedCommonName(t *testing.T) {
+	got := defaultManagedOutputDir("/srv/certbro", " Example.COM. ")
+	want := filepath.Join("/srv/certbro", "example.com")
+	if got != want {
+		t.Fatalf("defaultManagedOutputDir() = %q, want %q", got, want)
+	}
+}
+
 func TestRunIssueRejectsValidityDaysNotGreaterThanRenewBeforeDays(t *testing.T) {
+	root := t.TempDir()
 	app := &App{}
 	err := app.runIssue(context.Background(), []string{
 		"--common-name", "example.com",
-		"--output-dir", t.TempDir(),
 		"--validity-days", "3",
 		"--renew-before-days", "7",
 		"--reissue-lead-days", "2",
-	}, rootOptions{StateFile: filepath.Join(t.TempDir(), "state.json")}, &config.Store{Version: config.CurrentVersion})
+	}, rootOptions{
+		StateFile:       filepath.Join(root, "state.json"),
+		CertificatesDir: root,
+	}, &config.Store{Version: config.CurrentVersion})
 	if err == nil {
 		t.Fatal("runIssue() error = nil, want error")
 	}
@@ -197,8 +212,10 @@ func TestRunIssuePairRejectsExistingManagedCertificate(t *testing.T) {
 	err := app.runIssuePair(context.Background(), []string{
 		"--name-base", "example-com",
 		"--common-name", "example.com",
-		"--output-dir-base", filepath.Join(root, "example.com"),
-	}, rootOptions{StateFile: statePath}, store)
+	}, rootOptions{
+		StateFile:       statePath,
+		CertificatesDir: root,
+	}, store)
 	if err == nil {
 		t.Fatal("runIssuePair() error = nil, want error")
 	}
@@ -208,6 +225,9 @@ func TestRunIssuePairRejectsExistingManagedCertificate(t *testing.T) {
 }
 
 func TestRunConfigureValidatesAndPersistsAPIKey(t *testing.T) {
+	t.Setenv("REGFISH_API_KEY", "ambient-key")
+	t.Setenv("REGFISH_API_BASE", "https://ambient.invalid")
+
 	server, err := testutil.NewLocalServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/tls/certificate" {
 			t.Fatalf("unexpected path %q", r.URL.Path)
@@ -290,6 +310,9 @@ func TestRunConfigureRejectsUserAgentMetadataFlags(t *testing.T) {
 }
 
 func TestNewClientRequiresVerifiedConfiguredKey(t *testing.T) {
+	t.Setenv("REGFISH_API_KEY", "ambient-key")
+	t.Setenv("REGFISH_API_BASE", "https://ambient.invalid")
+
 	app := &App{Version: "test"}
 	store := &config.Store{
 		Version:    config.CurrentVersion,
@@ -303,8 +326,12 @@ func TestNewClientRequiresVerifiedConfiguredKey(t *testing.T) {
 
 	now := time.Now().UTC()
 	store.APIKeyValidatedAt = &now
-	if _, err := app.newClient(rootOptions{}, store); err != nil {
+	client, err := app.newClient(rootOptions{}, store)
+	if err != nil {
 		t.Fatalf("newClient() error = %v, want nil", err)
+	}
+	if client.BaseURL != "https://api.regfish.com" {
+		t.Fatalf("client.BaseURL = %q, want https://api.regfish.com", client.BaseURL)
 	}
 
 	if _, err := app.newClient(rootOptions{APIKey: "other-key"}, store); err == nil || !strings.Contains(err.Error(), "differs from the verified configured key") {
@@ -314,6 +341,8 @@ func TestNewClientRequiresVerifiedConfiguredKey(t *testing.T) {
 
 func TestNewClientIgnoresUserAgentInstanceEnvVar(t *testing.T) {
 	t.Setenv("CERTBRO_USER_AGENT_INSTANCE", "env-override")
+	t.Setenv("REGFISH_API_KEY", "ambient-key")
+	t.Setenv("REGFISH_API_BASE", "https://ambient.invalid")
 
 	now := time.Now().UTC()
 	app := &App{Version: "test"}
@@ -328,6 +357,9 @@ func TestNewClientIgnoresUserAgentInstanceEnvVar(t *testing.T) {
 	client, err := app.newClient(rootOptions{}, store)
 	if err != nil {
 		t.Fatalf("newClient() error = %v", err)
+	}
+	if client.BaseURL != "https://api.regfish.com" {
+		t.Fatalf("client.BaseURL = %q, want https://api.regfish.com", client.BaseURL)
 	}
 	if !strings.Contains(client.UserAgent, "instance=configured-instance") {
 		t.Fatalf("client.UserAgent = %q, want configured instance", client.UserAgent)
@@ -375,4 +407,92 @@ func TestStoreForRenewPreservesVerifiedAPIConfiguration(t *testing.T) {
 	if len(renewStore.ManagedCertificates) != 1 || renewStore.ManagedCertificates[0].Name != "example-com" {
 		t.Fatalf("renewStore.ManagedCertificates = %#v", renewStore.ManagedCertificates)
 	}
+}
+
+func TestRunListIncludesPendingCompletionDetails(t *testing.T) {
+	outputDir := filepath.Join(t.TempDir(), "example.com")
+	if err := deploy.WritePending(outputDir, deploy.PendingMaterial{
+		PrivateKeyPEM: []byte("test-key"),
+		CSRPEM:        []byte("test-csr"),
+		Metadata: deploy.PendingMetadata{
+			Action:                "issue",
+			CertificateID:         "OVPENDING",
+			CommonName:            "example.com",
+			Product:               "SecureSite",
+			RequestedAt:           time.Now().UTC(),
+			RequestedValidityDays: 199,
+			ActionRequired:        true,
+			PendingReason:         "organization_required",
+			PendingMessage:        "Complete the organization and contact validation in the regfish Console.",
+			CompletionURL:         "https://dash.regfish.com/my/certs/OVPENDING/complete",
+		},
+	}); err != nil {
+		t.Fatalf("WritePending() error = %v", err)
+	}
+
+	store := &config.Store{
+		Version: config.CurrentVersion,
+		ManagedCertificates: []config.ManagedCertificate{
+			{
+				Name:          "example-com",
+				CommonName:    "example.com",
+				OutputDir:     outputDir,
+				CertificateID: "OVPENDING",
+				PendingAction: "issue",
+				ValidityDays:  199,
+			},
+		},
+	}
+
+	output := captureStdout(t, func() {
+		app := &App{}
+		if err := app.runList([]string{"--json"}, store); err != nil {
+			t.Fatalf("runList() error = %v", err)
+		}
+	})
+
+	var views []managedCertificateListView
+	if err := json.Unmarshal([]byte(output), &views); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, output)
+	}
+	if len(views) != 1 {
+		t.Fatalf("len(views) = %d, want 1", len(views))
+	}
+	if views[0].ActionRequired == nil || !*views[0].ActionRequired {
+		t.Fatalf("views[0].ActionRequired = %v, want true", views[0].ActionRequired)
+	}
+	if views[0].PendingReason != "organization_required" {
+		t.Fatalf("views[0].PendingReason = %q", views[0].PendingReason)
+	}
+	if views[0].CompletionURL != "https://dash.regfish.com/my/certs/OVPENDING/complete" {
+		t.Fatalf("views[0].CompletionURL = %q", views[0].CompletionURL)
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	originalStdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	defer reader.Close()
+
+	os.Stdout = writer
+	defer func() {
+		os.Stdout = originalStdout
+	}()
+
+	fn()
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(reader); err != nil {
+		t.Fatalf("ReadFrom() error = %v", err)
+	}
+	return buf.String()
 }

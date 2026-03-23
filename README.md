@@ -14,7 +14,7 @@ It orders certificates, provisions `dns-cname-token` validation records through 
 - RSA and ECDSA key rotation on new issues, renewal orders, and reissues
 - Stable files under `live/` and versioned snapshots under `archive/`
 - Built-in validation and reload support for `nginx`, `apache`, and `caddy`
-- Hourly unattended renewals through `systemd`
+- Unattended renewals through `systemd`
 
 ## Requirements
 
@@ -41,40 +41,36 @@ curl -fsSL https://install.certbro.com/rf | CERTBRO_VERSION=v0.1.0 sh
 
 ## Quick Start
 
-By default, `certbro` uses `/etc/certbro/state.json` as the state file and `/etc/certbro` as the managed certificates root. The commands below keep the paths explicit for clarity:
+By default, `certbro` uses `/etc/certbro/state.json` as the state file and `/etc/certbro` as the managed certificates root. `issue`, `import`, and `issue-pair` also derive certificate directories from that root and the `common-name`. The commands below use those defaults. Add `--state-file`, `--certificates-dir`, `--output-dir`, or `--output-dir-base` only when you want different paths.
 
 ```sh
 sudo mkdir -p /etc/certbro
 
-sudo certbro --state-file /etc/certbro/state.json configure \
-  --api-key YOUR_REGFISH_API_KEY
+sudo certbro configure --api-key YOUR_REGFISH_API_KEY
 ```
 
 Issue and deploy a certificate:
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json issue \
+sudo certbro issue \
   --name example-com \
   --common-name example.com \
   --dns-name www.example.com \
-  --product RapidSSL \
-  --webserver nginx \
-  --key-type ecdsa \
-  --ecdsa-curve p256 \
-  --output-dir /etc/certbro/example.com
+  --webserver nginx
 ```
+
+For DV products, `certbro issue` usually waits for issuance and deploys the certificate directly. For OV or business products, the TLS API can instead return `action_required=true` with a `completion_url` under `/my/certs/...`. In that case, `certbro` stores the pending material locally, prints the Console URL, and exits successfully. A later `certbro renew` run resumes the same pending order after the Console step has been completed.
 
 Run renewals manually:
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json renew
+sudo certbro renew
 ```
 
 Install the hourly renewal timer:
 
 ```sh
-sudo certbro --state-file /etc/certbro/state.json install \
-  --certificates-dir /etc/certbro
+sudo certbro install
 ```
 
 ## Common Workflows
@@ -82,6 +78,7 @@ sudo certbro --state-file /etc/certbro/state.json install \
 - Multi-domain certificates: repeat `--dns-name` for each SAN
 - Dual RSA and ECDSA deployment: use `certbro issue-pair`
 - Existing regfish orders: import by `certificate_id`
+- OV or business orders: `certbro issue` can return a Console `completion_url`; if you already know a usable `--org-id`, pass it up front, otherwise complete the order there and let `certbro renew` finish it later
 - Immediate replacement: `certbro renew --name example-com --force`
 - One-off renewal lifetime override: `certbro renew --name example-com --force --validity-days 30`
 - Pending issuance after a timeout: rerun `certbro renew --name example-com` to resume monitoring the existing request

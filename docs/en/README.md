@@ -11,6 +11,7 @@ This directory contains the English operational guides for `certbro`.
 
 ## Certificate Workflows
 
+- [Workflow Overview](workflow-overview.md): compare DV, staged OV/business, and pre-linked organization flows end to end
 - [Issuing Certificates](issuing-certificates.md): single-domain, SAN, product selection, key algorithms, validity schedule, and quiet mode
 - [Validity Management](validity-management.md): manual lifetime changes and automatic schedule-aware adjustment of stored values
 - [Dual RSA and ECDSA Certificates](dual-certificates.md): operate parallel certificate variants for modern and legacy TLS clients
