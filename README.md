@@ -59,7 +59,7 @@ sudo certbro issue \
   --webserver nginx
 ```
 
-For DV products, `certbro issue` usually waits for issuance and deploys the certificate directly. For OV or business products, the TLS API can instead return `action_required=true` with a `completion_url` under `/my/certs/...`. In that case, `certbro` stores the pending material locally, prints the Console URL, and exits successfully. A later `certbro renew` run resumes the same pending order after the Console step has been completed.
+For DV products, `certbro issue` usually waits for issuance and deploys the certificate directly. For OV or organization-validated business products, the TLS API can instead return `action_required=true` with a `completion_url` under `/my/certs/...`. In that case, `certbro` stores the pending material locally, prints the Console URL, and exits successfully. A later `certbro renew` run resumes the same pending order after the Console step has been completed.
 
 Run renewals manually:
 
@@ -78,7 +78,7 @@ sudo certbro install
 - Multi-domain certificates: repeat `--dns-name` for each SAN
 - Dual RSA and ECDSA deployment: use `certbro issue-pair`
 - Existing regfish orders: import by `certificate_id`
-- OV or business orders: `certbro issue` can return a Console `completion_url`; if you already know a usable `--org-id`, pass it up front, otherwise complete the order there and let `certbro renew` finish it later
+- OV or business orders: `--org-id` expects the public TLS organization id from `/tls/organization` or `organization_id`, for example `hdl_ABCDEFGHJKLMN`; `certbro issue` can still return a Console `completion_url` if the organization is not yet usable or more completion data is required
 - Immediate replacement: `certbro renew --name example-com --force`
 - One-off renewal lifetime override: `certbro renew --name example-com --force --validity-days 30`
 - Pending issuance after a timeout: rerun `certbro renew --name example-com` to resume monitoring the existing request

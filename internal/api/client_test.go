@@ -134,7 +134,7 @@ func TestGetCertificateParsesCurrentOpenAPIFields(t *testing.T) {
 				"pending_reason": "validation_pending",
 				"pending_message": "The TLS certificate order is waiting for domain validation.",
 				"completion_url": "https://dash.regfish.com/my/certs/7K9QW3M2ZT8HJ/complete",
-				"organization_id": 42,
+				"organization_id": "hdl_ABCDEFGHJKLMN",
 				"revocation_scope": "certificate",
 				"revocation_pending_scope": "order",
 				"renewal_supported": true,
@@ -151,7 +151,7 @@ func TestGetCertificateParsesCurrentOpenAPIFields(t *testing.T) {
 				"order_cancellation_mode": "revoke_issued",
 				"order_cancellable_until": "2026-03-20T10:00:00Z",
 				"organization": {
-					"id": 42,
+					"id": "hdl_ABCDEFGHJKLMN",
 					"name": "Example GmbH",
 					"status": "validated",
 					"usable_for_ordering": true
@@ -183,7 +183,7 @@ func TestGetCertificateParsesCurrentOpenAPIFields(t *testing.T) {
 	if cert.ActionRequired {
 		t.Fatalf("ActionRequired = %v, want false", cert.ActionRequired)
 	}
-	if cert.PendingReason != "validation_pending" || cert.OrganizationID != 42 {
+	if cert.PendingReason != "validation_pending" || cert.OrganizationID != "hdl_ABCDEFGHJKLMN" {
 		t.Fatalf("pending/org fields = %#v", cert)
 	}
 	if cert.CompletionURL != "https://dash.regfish.com/my/certs/7K9QW3M2ZT8HJ/complete" {
@@ -204,5 +204,46 @@ func TestGetCertificateParsesCurrentOpenAPIFields(t *testing.T) {
 	wantUntil := time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC)
 	if cert.OrderCancellableUntil == nil || !cert.OrderCancellableUntil.Equal(wantUntil) {
 		t.Fatalf("OrderCancellableUntil = %v, want %v", cert.OrderCancellableUntil, wantUntil)
+	}
+}
+
+func TestGetCertificateAcceptsLegacyNumericOrganizationID(t *testing.T) {
+	server, err := testutil.NewLocalServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"success": true,
+			"response": {
+				"id": "7K9QW3M2ZT8HJ",
+				"status": "pending",
+				"common_name": "example.com",
+				"product": "SecureSite",
+				"provider": "digicert",
+				"dns_names": ["example.com"],
+				"action_required": true,
+				"pending_reason": "organization_required",
+				"pending_message": "Complete the organization and contact validation in the regfish Console.",
+				"completion_url": "https://dash.regfish.com/my/certs/7K9QW3M2ZT8HJ/complete",
+				"organization_id": 42,
+				"certificate_pem_available": false
+			}
+		}`))
+	}))
+	if err != nil {
+		t.Fatalf("NewLocalServer() error = %v", err)
+	}
+	defer server.Close()
+
+	client, err := NewClient("secret", server.URL, "certbro/test")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	client.HTTPClient = server.Client()
+
+	cert, err := client.GetCertificate(context.Background(), "7K9QW3M2ZT8HJ")
+	if err != nil {
+		t.Fatalf("GetCertificate() error = %v", err)
+	}
+	if cert.OrganizationID != "42" {
+		t.Fatalf("cert.OrganizationID = %q, want legacy id converted to string", cert.OrganizationID)
 	}
 }

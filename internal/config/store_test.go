@@ -100,6 +100,31 @@ func TestSaveLoadAndDiscoverManagedCertificates(t *testing.T) {
 	}
 }
 
+func TestLoadManagedCertificateAcceptsLegacyNumericOrganizationID(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ManagedCertFileName)
+	raw := []byte(`{
+  "name": "example-com",
+  "common_name": "example.com",
+  "product": "SecureSite",
+  "organization_id": 42,
+  "output_dir": "/tmp/example.com",
+  "created_at": "2026-03-30T10:00:00Z",
+  "updated_at": "2026-03-30T10:00:00Z"
+}`)
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	got, err := LoadManagedCertificate(path)
+	if err != nil {
+		t.Fatalf("LoadManagedCertificate() error = %v", err)
+	}
+	if got.OrganizationID != "42" {
+		t.Fatalf("got.OrganizationID = %q, want legacy numeric id converted to string", got.OrganizationID)
+	}
+}
+
 func TestValidityScheduleFollowsCABForumTimeline(t *testing.T) {
 	tests := []struct {
 		name                string

@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/regfish/certbro/internal/tlsmeta"
 )
 
 // DefaultBaseURL is the default regfish API endpoint used by certbro.
@@ -113,30 +115,30 @@ type TLSCertificateReissue struct {
 
 // TLSOrganizationSummary contains the minimal organization metadata returned with a certificate.
 type TLSOrganizationSummary struct {
-	ID                int    `json:"id"`
-	Name              string `json:"name"`
-	Status            string `json:"status"`
-	UsableForOrdering bool   `json:"usable_for_ordering"`
+	ID                tlsmeta.OrganizationID `json:"id"`
+	Name              string                 `json:"name"`
+	Status            string                 `json:"status"`
+	UsableForOrdering bool                   `json:"usable_for_ordering"`
 }
 
 // TLSCertificate models the public TLS certificate resource returned by the API.
 type TLSCertificate struct {
-	ID                     string   `json:"id"`
-	Status                 string   `json:"status"`
-	CommonName             string   `json:"common_name"`
-	Product                string   `json:"product"`
-	Provider               string   `json:"provider"`
-	DNSNames               []string `json:"dns_names"`
-	OrderState             string   `json:"order_state,omitempty"`
-	ActionRequired         bool     `json:"action_required"`
-	PendingReason          string   `json:"pending_reason,omitempty"`
-	PendingMessage         string   `json:"pending_message,omitempty"`
-	CompletionURL          string   `json:"completion_url,omitempty"`
-	OrganizationID         int      `json:"organization_id,omitempty"`
-	RevocationScope        string   `json:"revocation_scope,omitempty"`
-	RevocationPendingScope string   `json:"revocation_pending_scope,omitempty"`
-	RenewalSupported       bool     `json:"renewal_supported,omitempty"`
-	ReissueSupported       bool     `json:"reissue_supported"`
+	ID                     string                 `json:"id"`
+	Status                 string                 `json:"status"`
+	CommonName             string                 `json:"common_name"`
+	Product                string                 `json:"product"`
+	Provider               string                 `json:"provider"`
+	DNSNames               []string               `json:"dns_names"`
+	OrderState             string                 `json:"order_state,omitempty"`
+	ActionRequired         bool                   `json:"action_required"`
+	PendingReason          string                 `json:"pending_reason,omitempty"`
+	PendingMessage         string                 `json:"pending_message,omitempty"`
+	CompletionURL          string                 `json:"completion_url,omitempty"`
+	OrganizationID         tlsmeta.OrganizationID `json:"organization_id,omitempty"`
+	RevocationScope        string                 `json:"revocation_scope,omitempty"`
+	RevocationPendingScope string                 `json:"revocation_pending_scope,omitempty"`
+	RenewalSupported       bool                   `json:"renewal_supported,omitempty"`
+	ReissueSupported       bool                   `json:"reissue_supported"`
 	// ValidityDays is the purchased base order validity in days. It is not the authoritative
 	// issued certificate lifetime for provider-linked renewals. Use ValidFrom and ValidUntil
 	// to determine the effective issued lifetime.
@@ -173,13 +175,13 @@ type TLSProduct struct {
 
 // TLSCertificateRequest is the order or renewal payload for POST /tls/certificate.
 type TLSCertificateRequest struct {
-	SKU          string   `json:"sku"`
-	CommonName   string   `json:"common_name"`
-	DNSNames     []string `json:"dns_names,omitempty"`
-	CSR          string   `json:"csr"`
-	DCVMethod    string   `json:"dcv_method"`
-	DCVEmails    []string `json:"dcv_emails,omitempty"`
-	Organization int      `json:"org_id,omitempty"`
+	SKU          string                 `json:"sku"`
+	CommonName   string                 `json:"common_name"`
+	DNSNames     []string               `json:"dns_names,omitempty"`
+	CSR          string                 `json:"csr"`
+	DCVMethod    string                 `json:"dcv_method"`
+	DCVEmails    []string               `json:"dcv_emails,omitempty"`
+	Organization tlsmeta.OrganizationID `json:"org_id,omitempty"`
 	// RenewalOfCertificateID turns a regular order into a provider-linked renewal of an existing
 	// public certificate id. Any remaining-validity bonus is decided by the provider and is not
 	// guaranteed until the new certificate has actually been issued.

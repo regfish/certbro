@@ -23,6 +23,7 @@ import (
 	"github.com/regfish/certbro/internal/deploy"
 	"github.com/regfish/certbro/internal/lock"
 	"github.com/regfish/certbro/internal/systemd"
+	"github.com/regfish/certbro/internal/tlsmeta"
 )
 
 // App bundles build metadata and command handlers for the certbro CLI.
@@ -227,8 +228,8 @@ func (a *App) runList(args []string, store *config.Store) error {
 			fmt.Printf("  rsa_bits: %d\n", cert.RSABits)
 		}
 		fmt.Printf("  status: %s\n", emptyFallback(cert.Status, "-"))
-		if cert.OrganizationID > 0 {
-			fmt.Printf("  organization_id: %d\n", cert.OrganizationID)
+		if !cert.OrganizationID.IsZero() {
+			fmt.Printf("  organization_id: %s\n", cert.OrganizationID)
 		}
 		if cert.ValidityDays > 0 {
 			fmt.Printf("  purchased_validity_days: %d\n", cert.ValidityDays)
@@ -311,7 +312,7 @@ func (a *App) runIssue(ctx context.Context, args []string, root rootOptions, sto
 	var installHook string
 	var webserver string
 	var webserverConfig string
-	var orgID int
+	var orgID string
 	var validityDays int
 	var keyType string
 	var rsaBits int
@@ -330,7 +331,7 @@ func (a *App) runIssue(ctx context.Context, args []string, root rootOptions, sto
 	fs.StringVar(&installHook, "install-hook", "", "shell command executed after successful deploy")
 	fs.StringVar(&webserver, "webserver", "", "reload the given webserver after deploy: nginx, apache, or caddy")
 	fs.StringVar(&webserverConfig, "webserver-config", "", "optional webserver config path used for validation/reload")
-	fs.IntVar(&orgID, "org-id", 0, "optional organization id to pre-link OV/business orders")
+	fs.StringVar(&orgID, "org-id", "", "optional public TLS organization id (for example hdl_ABCDEFGHJKLMN) to pre-link OV/business orders")
 	fs.IntVar(&validityDays, "validity-days", defaultValidityDays, "purchased base certificate validity in days")
 	fs.StringVar(&keyType, "key-type", config.DefaultKeyType, "private key type: rsa or ecdsa")
 	fs.IntVar(&rsaBits, "rsa-bits", config.DefaultRSABits, "RSA private key size")
@@ -391,7 +392,7 @@ func (a *App) runIssue(ctx context.Context, args []string, root rootOptions, sto
 		CommonName:      commonName,
 		DNSNames:        certcrypto.NormalizeDNSNames("", dnsNames),
 		Product:         product,
-		OrganizationID:  orgID,
+		OrganizationID:  tlsmeta.NormalizeOrganizationID(orgID),
 		ValidityDays:    validityDays,
 		OutputDir:       absOutputDir,
 		InstallHook:     installHook,
@@ -430,7 +431,7 @@ func (a *App) runIssuePair(ctx context.Context, args []string, root rootOptions,
 	var installHook string
 	var webserver string
 	var webserverConfig string
-	var orgID int
+	var orgID string
 	var validityDays int
 	var rsaBits int
 	var ecdsaCurve string
@@ -448,7 +449,7 @@ func (a *App) runIssuePair(ctx context.Context, args []string, root rootOptions,
 	fs.StringVar(&installHook, "install-hook", "", "shell command executed after successful deploy of the ECDSA certificate")
 	fs.StringVar(&webserver, "webserver", "", "reload the given webserver after both certificates are in place: nginx, apache, or caddy")
 	fs.StringVar(&webserverConfig, "webserver-config", "", "optional webserver config path used for validation/reload")
-	fs.IntVar(&orgID, "org-id", 0, "optional organization id to pre-link OV/business orders")
+	fs.StringVar(&orgID, "org-id", "", "optional public TLS organization id (for example hdl_ABCDEFGHJKLMN) to pre-link OV/business orders")
 	fs.IntVar(&validityDays, "validity-days", defaultValidityDays, "purchased base certificate validity in days")
 	fs.IntVar(&rsaBits, "rsa-bits", config.DefaultRSABits, "RSA private key size")
 	fs.StringVar(&ecdsaCurve, "ecdsa-curve", config.DefaultECDSACurve, "ECDSA curve: p256, p384, or p521")
@@ -496,7 +497,7 @@ func (a *App) runIssuePair(ctx context.Context, args []string, root rootOptions,
 		DNSNames:        certcrypto.NormalizeDNSNames("", dnsNames),
 		Product:         product,
 		OutputDirBase:   absOutputDirBase,
-		OrganizationID:  orgID,
+		OrganizationID:  tlsmeta.NormalizeOrganizationID(orgID),
 		ValidityDays:    validityDays,
 		RenewBeforeDays: renewBeforeDays,
 		ReissueLeadDays: reissueLeadDays,
@@ -570,7 +571,7 @@ func (a *App) runImport(ctx context.Context, args []string, root rootOptions, st
 	var installHook string
 	var webserver string
 	var webserverConfig string
-	var orgID int
+	var orgID string
 	var keyType string
 	var rsaBits int
 	var ecdsaCurve string
@@ -585,7 +586,7 @@ func (a *App) runImport(ctx context.Context, args []string, root rootOptions, st
 	fs.StringVar(&installHook, "install-hook", "", "shell command executed after successful deploy")
 	fs.StringVar(&webserver, "webserver", "", "reload the given webserver after deploy: nginx, apache, or caddy")
 	fs.StringVar(&webserverConfig, "webserver-config", "", "optional webserver config path used for validation/reload")
-	fs.IntVar(&orgID, "org-id", 0, "optional organization id used for future new orders")
+	fs.StringVar(&orgID, "org-id", "", "optional public TLS organization id (for example hdl_ABCDEFGHJKLMN) used for future new orders")
 	fs.StringVar(&keyType, "key-type", config.DefaultKeyType, "private key type used for future renewals: rsa or ecdsa")
 	fs.IntVar(&rsaBits, "rsa-bits", config.DefaultRSABits, "RSA private key size used for future renewals")
 	fs.StringVar(&ecdsaCurve, "ecdsa-curve", config.DefaultECDSACurve, "ECDSA curve used for future renewals: p256, p384, or p521")
@@ -637,7 +638,7 @@ func (a *App) runImport(ctx context.Context, args []string, root rootOptions, st
 		InstallHook:     installHook,
 		Webserver:       webserver,
 		WebserverConfig: webserverConfig,
-		OrganizationID:  orgID,
+		OrganizationID:  tlsmeta.NormalizeOrganizationID(orgID),
 		KeyType:         keyType,
 		RSABits:         rsaBits,
 		ECDSACurve:      ecdsaCurve,
@@ -1074,7 +1075,7 @@ type issuePairOptions struct {
 	DNSNames        []string
 	Product         string
 	OutputDirBase   string
-	OrganizationID  int
+	OrganizationID  tlsmeta.OrganizationID
 	ValidityDays    int
 	RenewBeforeDays int
 	ReissueLeadDays int

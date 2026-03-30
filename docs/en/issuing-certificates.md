@@ -29,15 +29,17 @@ sudo certbro issue \
   --product SecureSite
 ```
 
-If you already know a usable organization id from the regfish Console, pass it up front:
+If you already know a usable public TLS organization id, pass it up front:
 
 ```sh
 sudo certbro issue \
   --name example-com \
   --common-name example.com \
   --product SecureSite \
-  --org-id 42
+  --org-id hdl_ABCDEFGHJKLMN
 ```
+
+`--org-id` expects the same public `org_id` used by the TLS API in `/tls/organization`, `organization_id`, and `POST /tls/certificate/{certificate_id}/complete`. It is not an internal numeric database id.
 
 That pre-links the order to the existing organization. If the organization is already usable for ordering, the TLS API can continue directly without returning a staged completion URL.
 
@@ -47,6 +49,7 @@ If the TLS API responds with `action_required=true`, `certbro` prints fields suc
 - `pending_reason`
 - `pending_message`
 - `completion_url`
+- `organization_id`
 
 Follow the `completion_url` in the regfish Console, complete the OV/business order there, and then rerun:
 
@@ -55,6 +58,16 @@ sudo certbro renew --name example-com
 ```
 
 `certbro renew` resumes the same pending order and provisions DCV as soon as validation records become available. If the certificate is already ready afterwards, `certbro` downloads and deploys it in the same run. If provider-side OV/business validation is still pending, `certbro renew` exits cleanly and continues on a later renewal run or timer cycle.
+
+For direct API clients, the current OpenAPI specification also documents programmatic completion via `POST /tls/certificate/{certificate_id}/complete` with a payload such as:
+
+```json
+{
+  "org_id": "hdl_ABCDEFGHJKLMN"
+}
+```
+
+`certbro` itself still relies on the Console `completion_url` for that human completion step and then resumes DCV, polling, download, and deployment during `renew`.
 
 ## Validity Schedule
 

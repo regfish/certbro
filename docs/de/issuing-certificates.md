@@ -29,15 +29,17 @@ sudo certbro issue \
   --product SecureSite
 ```
 
-Wenn bereits eine nutzbare Organisations-ID aus der regfish Console bekannt ist, kann sie direkt mitgegeben werden:
+Wenn bereits eine nutzbare öffentliche TLS-Organisations-ID bekannt ist, kann sie direkt mitgegeben werden:
 
 ```sh
 sudo certbro issue \
   --name example-com \
   --common-name example.com \
   --product SecureSite \
-  --org-id 42
+  --org-id hdl_ABCDEFGHJKLMN
 ```
+
+`--org-id` erwartet dieselbe öffentliche `org_id`, die die TLS API in `/tls/organization`, `organization_id` und `POST /tls/certificate/{certificate_id}/complete` verwendet. Es geht nicht um eine interne numerische Datenbank-ID.
 
 Damit wird die Bestellung direkt mit der vorhandenen Organisation verknüpft. Ist diese Organisation bereits bestellbar, kann die TLS API ohne gestufte Completion-URL direkt weiterlaufen.
 
@@ -47,6 +49,7 @@ Wenn die TLS API mit `action_required=true` antwortet, gibt `certbro` unter ande
 - `pending_reason`
 - `pending_message`
 - `completion_url`
+- `organization_id`
 
 Die `completion_url` in der regfish Console öffnen, die OV-/Business-Bestellung dort abschließen und danach erneut ausführen:
 
@@ -55,6 +58,16 @@ sudo certbro renew --name example-com
 ```
 
 `certbro renew` setzt denselben offenen Vorgang fort und provisioniert DCV, sobald die Validierungsrecords verfügbar sind. Wenn das Zertifikat danach schon bereitsteht, lädt `certbro` es im selben Lauf herunter und deployt es. Wenn die providerseitige OV-/Business-Validierung noch läuft, beendet sich `certbro renew` sauber und setzt den Vorgang bei einem späteren Renewal-Lauf oder Timer-Zyklus fort.
+
+Für direkte API-Clients beschreibt die aktuelle OpenAPI-Spezifikation zusätzlich den programmatischen Abschluss über `POST /tls/certificate/{certificate_id}/complete` mit einem Body wie:
+
+```json
+{
+  "org_id": "hdl_ABCDEFGHJKLMN"
+}
+```
+
+`certbro` selbst nutzt dafür weiterhin die Console-`completion_url` und übernimmt danach im `renew`-Pfad wieder DCV, Polling, Download und Deployment.
 
 ## Laufzeit-Zeitplan
 

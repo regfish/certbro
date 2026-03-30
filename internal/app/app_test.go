@@ -135,7 +135,7 @@ func TestBuildIssuePairManagedCertificates(t *testing.T) {
 		DNSNames:        []string{"www.example.com", "api.example.com"},
 		Product:         "RapidSSL",
 		OutputDirBase:   "/etc/certbro/example.com",
-		OrganizationID:  7,
+		OrganizationID:  "hdl_ABCDEFGHJKLMN",
 		ValidityDays:    90,
 		RenewBeforeDays: 7,
 		ReissueLeadDays: 7,
@@ -157,6 +157,9 @@ func TestBuildIssuePairManagedCertificates(t *testing.T) {
 	}
 	if ecdsaManaged.KeyType != certcrypto.KeyTypeECDSA || ecdsaManaged.ECDSACurve != "p384" {
 		t.Fatalf("ecdsa managed = %#v", ecdsaManaged)
+	}
+	if rsaManaged.OrganizationID != "hdl_ABCDEFGHJKLMN" || ecdsaManaged.OrganizationID != "hdl_ABCDEFGHJKLMN" {
+		t.Fatalf("organization id not propagated: %#v %#v", rsaManaged, ecdsaManaged)
 	}
 	if rsaManaged.Webserver != "nginx" || ecdsaManaged.WebserverConfig != "/etc/nginx/nginx.conf" {
 		t.Fatalf("webserver integration not propagated: %#v %#v", rsaManaged, ecdsaManaged)

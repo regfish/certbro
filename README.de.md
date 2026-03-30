@@ -59,7 +59,7 @@ sudo certbro issue \
   --webserver nginx
 ```
 
-Für DV-Produkte wartet `certbro issue` in der Regel auf die Ausstellung und deployt das Zertifikat direkt. Für OV- oder Business-Produkte kann die TLS API stattdessen `action_required=true` mit einer `completion_url` unter `/my/certs/...` zurückgeben. In diesem Fall speichert `certbro` das Pending-Material lokal, gibt die Console-URL aus und endet erfolgreich. Ein späterer Lauf von `certbro renew` setzt denselben offenen Vorgang fort, nachdem der Console-Schritt abgeschlossen wurde.
+Für DV-Produkte wartet `certbro issue` in der Regel auf die Ausstellung und deployt das Zertifikat direkt. Für OV- oder organisationsvalidierte Business-Produkte kann die TLS API stattdessen `action_required=true` mit einer `completion_url` unter `/my/certs/...` zurückgeben. In diesem Fall speichert `certbro` das Pending-Material lokal, gibt die Console-URL aus und endet erfolgreich. Ein späterer Lauf von `certbro renew` setzt denselben offenen Vorgang fort, nachdem der Console-Schritt abgeschlossen wurde.
 
 Renewals manuell ausführen:
 
@@ -78,7 +78,7 @@ sudo certbro install
 - Multi-Domain-Zertifikate: `--dns-name` für jede SAN wiederholen
 - Paralleler RSA- und ECDSA-Betrieb: `certbro issue-pair`
 - Bereits bestehende regfish-Bestellungen: Import per `certificate_id`
-- OV- oder Business-Bestellungen: `certbro issue` kann eine Console-`completion_url` zurückgeben; wenn bereits eine nutzbare `--org-id` bekannt ist, direkt mitgeben, andernfalls die Bestellung dort abschließen und später mit `certbro renew` finalisieren
+- OV- oder Business-Bestellungen: `--org-id` erwartet die öffentliche TLS-Organisations-ID aus `/tls/organization` beziehungsweise `organization_id`, zum Beispiel `hdl_ABCDEFGHJKLMN`; `certbro issue` kann trotzdem noch eine Console-`completion_url` zurückgeben, wenn die Organisation nicht bestellbar ist oder weitere Completion-Daten fehlen
 - Sofortiger Ersatz: `certbro renew --name example-com --force`
 - Einmaliger Laufzeit-Override: `certbro renew --name example-com --force --validity-days 30`
 - Pending-Ausstellung nach Timeout: `certbro renew --name example-com` erneut ausführen, um denselben Request weiter zu beobachten

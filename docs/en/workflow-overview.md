@@ -63,16 +63,23 @@ sudo certbro issue \
   --name example-com \
   --common-name example.com \
   --product SecureSite \
-  --org-id 42
+  --org-id hdl_ABCDEFGHJKLMN
 ```
 
 This changes the flow:
 
 1. `certbro` still creates the private key and CSR locally.
-2. The order is pre-linked to the existing organization id.
+2. The order is pre-linked to the existing public TLS organization id (`org_id`, for example `hdl_ABCDEFGHJKLMN`).
 3. If that organization is already usable for ordering, the TLS API can continue directly without the staged `completion_url` detour.
 4. In that case, the flow moves closer to DV behavior: validation records can appear immediately in the initial `issue` response, and `certbro issue` can provision DNS in the same run.
 5. If the organization is incomplete or unusable, the TLS API can still fall back to the staged OV/business flow above.
+
+Important for both API and CLI consumers:
+
+- `POST /tls/certificate` accepts optional `org_id`.
+- `POST /tls/certificate/{certificate_id}/complete` requires `org_id`.
+- The response fields `organization_id` and `organization.id` use the same public string-based TLS organization id.
+- Older numeric examples are no longer authoritative for this flow.
 
 ## What `renew` Does for Pending Orders
 

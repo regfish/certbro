@@ -678,7 +678,7 @@ func TestStartOrderReturnsPendingActionRequiredWithoutWaiting(t *testing.T) {
 					"order_state": "ACTION_REQUIRED",
 					"action_required": true,
 					"completion_url": "https://dash.regfish.com/my/certs/OVPENDING/complete",
-					"organization_id": 42,
+					"organization_id": "hdl_ABCDEFGHJKLMN",
 					"validity_days": 199,
 					"certificate_pem_available": false
 				}
@@ -767,7 +767,7 @@ func TestStartOrderReturnsPendingActionRequiredWithoutWaiting(t *testing.T) {
 	if stored == nil {
 		t.Fatal("managed certificate not stored")
 	}
-	if stored.CertificateID != "OVPENDING" || stored.PendingAction != "issue" || stored.OrganizationID != 42 {
+	if stored.CertificateID != "OVPENDING" || stored.PendingAction != "issue" || stored.OrganizationID != "hdl_ABCDEFGHJKLMN" {
 		t.Fatalf("stored managed certificate = %#v", *stored)
 	}
 }
@@ -926,7 +926,7 @@ func TestRenewOneKeepsPendingActionRequiredWithoutWaiting(t *testing.T) {
 					"pending_reason": "organization_required",
 					"pending_message": "Complete the organization and contact validation in the regfish Console.",
 					"completion_url": "https://dash.regfish.com/my/certs/OVPENDING/complete",
-					"organization_id": 42,
+					"organization_id": "hdl_ABCDEFGHJKLMN",
 					"validity_days": 199,
 					"certificate_pem_available": false
 				}
@@ -1151,7 +1151,7 @@ func TestRenewOneReturnsAfterProvisioningOVValidationWhileProviderApprovalRemain
 					"dns_names": ["example.com"],
 					"order_state": "PENDING_APPROVAL",
 					"action_required": false,
-					"organization_id": 42,
+					"organization_id": "hdl_ABCDEFGHJKLMN",
 					"validity_days": 199,
 					"certificate_pem_available": false,
 					"validation": {
@@ -1201,7 +1201,7 @@ func TestRenewOneReturnsAfterProvisioningOVValidationWhileProviderApprovalRemain
 			OrganizationRequired:   true,
 			RequestedAt:            time.Now().UTC(),
 			RequestedValidityDays:  199,
-			OrganizationID:         42,
+			OrganizationID:         "hdl_ABCDEFGHJKLMN",
 			ActionRequired:         true,
 			PendingReason:          "organization_required",
 			PendingMessage:         "Complete the organization and contact validation in the regfish Console.",
@@ -1220,7 +1220,7 @@ func TestRenewOneReturnsAfterProvisioningOVValidationWhileProviderApprovalRemain
 		CertificateID:  "PENDINGCERT",
 		PendingAction:  "issue",
 		ValidityDays:   199,
-		OrganizationID: 42,
+		OrganizationID: "hdl_ABCDEFGHJKLMN",
 	}, false, 0, time.Minute, time.Millisecond)
 	if err != nil {
 		t.Fatalf("renewOne() error = %v", err)
@@ -1273,7 +1273,7 @@ func TestRenewOneFinalizesAlreadyIssuedPendingOrder(t *testing.T) {
 					"dns_names": ["example.com"],
 					"order_state": "ISSUED",
 					"action_required": false,
-					"organization_id": 42,
+					"organization_id": "hdl_ABCDEFGHJKLMN",
 					"validity_days": 199,
 					"certificate_pem_available": true,
 					"valid_from": "` + validFrom.Format(time.RFC3339) + `",
@@ -1316,7 +1316,7 @@ func TestRenewOneFinalizesAlreadyIssuedPendingOrder(t *testing.T) {
 			Product:               "SecureSite",
 			RequestedAt:           time.Now().UTC(),
 			RequestedValidityDays: 199,
-			OrganizationID:        42,
+			OrganizationID:        "hdl_ABCDEFGHJKLMN",
 		},
 	}); err != nil {
 		t.Fatalf("WritePending() error = %v", err)

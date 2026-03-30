@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/regfish/certbro/internal/tlsmeta"
 )
 
 const (
@@ -163,33 +165,33 @@ type Store struct {
 
 // ManagedCertificate is the persisted management state for one certificate directory.
 type ManagedCertificate struct {
-	Name               string     `json:"name"`
-	CommonName         string     `json:"common_name"`
-	DNSNames           []string   `json:"dns_names,omitempty"`
-	Product            string     `json:"product"`
-	OrganizationID     int        `json:"organization_id,omitempty"`
-	ValidityDays       int        `json:"validity_days,omitempty"`
-	OutputDir          string     `json:"output_dir"`
-	InstallHook        string     `json:"install_hook,omitempty"`
-	Webserver          string     `json:"webserver,omitempty"`
-	WebserverConfig    string     `json:"webserver_config,omitempty"`
-	KeyType            string     `json:"key_type,omitempty"`
-	RSABits            int        `json:"rsa_bits,omitempty"`
-	ECDSACurve         string     `json:"ecdsa_curve,omitempty"`
-	RenewBeforeDays    int        `json:"renew_before_days,omitempty"`
-	ReissueLeadDays    int        `json:"reissue_lead_days,omitempty"`
-	CertificateID      string     `json:"certificate_id,omitempty"`
-	Status             string     `json:"status,omitempty"`
-	OrderState         string     `json:"order_state,omitempty"`
-	PendingAction      string     `json:"pending_action,omitempty"`
-	PendingStartedAt   *time.Time `json:"pending_started_at,omitempty"`
-	LastIssuedAt       *time.Time `json:"last_issued_at,omitempty"`
-	LastDeployedAt     *time.Time `json:"last_deployed_at,omitempty"`
-	ValidFrom          *time.Time `json:"valid_from,omitempty"`
-	ValidUntil         *time.Time `json:"valid_until,omitempty"`
-	ContractValidUntil *time.Time `json:"contract_valid_until,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	Name               string                 `json:"name"`
+	CommonName         string                 `json:"common_name"`
+	DNSNames           []string               `json:"dns_names,omitempty"`
+	Product            string                 `json:"product"`
+	OrganizationID     tlsmeta.OrganizationID `json:"organization_id,omitempty"`
+	ValidityDays       int                    `json:"validity_days,omitempty"`
+	OutputDir          string                 `json:"output_dir"`
+	InstallHook        string                 `json:"install_hook,omitempty"`
+	Webserver          string                 `json:"webserver,omitempty"`
+	WebserverConfig    string                 `json:"webserver_config,omitempty"`
+	KeyType            string                 `json:"key_type,omitempty"`
+	RSABits            int                    `json:"rsa_bits,omitempty"`
+	ECDSACurve         string                 `json:"ecdsa_curve,omitempty"`
+	RenewBeforeDays    int                    `json:"renew_before_days,omitempty"`
+	ReissueLeadDays    int                    `json:"reissue_lead_days,omitempty"`
+	CertificateID      string                 `json:"certificate_id,omitempty"`
+	Status             string                 `json:"status,omitempty"`
+	OrderState         string                 `json:"order_state,omitempty"`
+	PendingAction      string                 `json:"pending_action,omitempty"`
+	PendingStartedAt   *time.Time             `json:"pending_started_at,omitempty"`
+	LastIssuedAt       *time.Time             `json:"last_issued_at,omitempty"`
+	LastDeployedAt     *time.Time             `json:"last_deployed_at,omitempty"`
+	ValidFrom          *time.Time             `json:"valid_from,omitempty"`
+	ValidUntil         *time.Time             `json:"valid_until,omitempty"`
+	ContractValidUntil *time.Time             `json:"contract_valid_until,omitempty"`
+	CreatedAt          time.Time              `json:"created_at"`
+	UpdatedAt          time.Time              `json:"updated_at"`
 }
 
 // DefaultPath returns the default certbro state file path.

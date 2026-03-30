@@ -13,24 +13,25 @@ import (
 	"time"
 
 	certcrypto "github.com/regfish/certbro/internal/crypto"
+	"github.com/regfish/certbro/internal/tlsmeta"
 )
 
 // PendingMetadata describes an unfinished issuance or reissue attempt on disk.
 type PendingMetadata struct {
-	Action                 string    `json:"action"`
-	CertificateID          string    `json:"certificate_id,omitempty"`
-	CommonName             string    `json:"common_name"`
-	DNSNames               []string  `json:"dns_names,omitempty"`
-	Product                string    `json:"product"`
-	ProductValidationLevel string    `json:"product_validation_level,omitempty"`
-	OrganizationRequired   bool      `json:"organization_required,omitempty"`
-	RequestedAt            time.Time `json:"requested_at"`
-	RequestedValidityDays  int       `json:"requested_validity_days,omitempty"`
-	OrganizationID         int       `json:"organization_id,omitempty"`
-	ActionRequired         bool      `json:"action_required,omitempty"`
-	PendingReason          string    `json:"pending_reason,omitempty"`
-	PendingMessage         string    `json:"pending_message,omitempty"`
-	CompletionURL          string    `json:"completion_url,omitempty"`
+	Action                 string                 `json:"action"`
+	CertificateID          string                 `json:"certificate_id,omitempty"`
+	CommonName             string                 `json:"common_name"`
+	DNSNames               []string               `json:"dns_names,omitempty"`
+	Product                string                 `json:"product"`
+	ProductValidationLevel string                 `json:"product_validation_level,omitempty"`
+	OrganizationRequired   bool                   `json:"organization_required,omitempty"`
+	RequestedAt            time.Time              `json:"requested_at"`
+	RequestedValidityDays  int                    `json:"requested_validity_days,omitempty"`
+	OrganizationID         tlsmeta.OrganizationID `json:"organization_id,omitempty"`
+	ActionRequired         bool                   `json:"action_required,omitempty"`
+	PendingReason          string                 `json:"pending_reason,omitempty"`
+	PendingMessage         string                 `json:"pending_message,omitempty"`
+	CompletionURL          string                 `json:"completion_url,omitempty"`
 }
 
 // PendingMaterial is the persisted key material required to resume a pending request.

@@ -152,7 +152,7 @@ func (m *Manager) Import(ctx context.Context, managed config.ManagedCertificate,
 	managed.OutputDir = absOutputDir
 	managed.DNSNames = certcrypto.NormalizeDNSNames("", remote.DNSNames)
 	managed.Product = remote.Product
-	if remote.OrganizationID > 0 {
+	if !remote.OrganizationID.IsZero() {
 		managed.OrganizationID = remote.OrganizationID
 	}
 	if remote.ValidityDays > 0 {
@@ -768,9 +768,9 @@ func pendingMetadataForCertificate(meta deploy.PendingMetadata, cert *api.TLSCer
 	} else if meta.RequestedValidityDays == 0 && managed != nil {
 		meta.RequestedValidityDays = managed.ValidityDays
 	}
-	if cert.OrganizationID > 0 {
+	if !cert.OrganizationID.IsZero() {
 		meta.OrganizationID = cert.OrganizationID
-	} else if meta.OrganizationID == 0 && managed != nil {
+	} else if meta.OrganizationID.IsZero() && managed != nil {
 		meta.OrganizationID = managed.OrganizationID
 	}
 
@@ -1102,14 +1102,14 @@ func pendingOrderMayPauseAfterValidation(meta deploy.PendingMetadata, managed *c
 		if cert.ActionRequired || strings.EqualFold(strings.TrimSpace(cert.PendingReason), "organization_required") {
 			return true
 		}
-		if cert.OrganizationID > 0 || (cert.Organization != nil && cert.Organization.ID > 0) {
+		if !cert.OrganizationID.IsZero() || (cert.Organization != nil && !cert.Organization.ID.IsZero()) {
 			return true
 		}
 	}
-	if meta.OrganizationID > 0 {
+	if !meta.OrganizationID.IsZero() {
 		return true
 	}
-	return managed != nil && managed.OrganizationID > 0
+	return managed != nil && !managed.OrganizationID.IsZero()
 }
 
 func certificateHasValidationDNSRecords(cert *api.TLSCertificate) bool {
@@ -1205,7 +1205,7 @@ func (m *Manager) progress() progressReporter {
 
 func (m *Manager) applyRemoteState(managed *config.ManagedCertificate, cert *api.TLSCertificate) {
 	managed.CertificateID = cert.ID
-	if cert.OrganizationID > 0 {
+	if !cert.OrganizationID.IsZero() {
 		managed.OrganizationID = cert.OrganizationID
 	}
 	managed.Status = cert.Status
