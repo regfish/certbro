@@ -18,13 +18,13 @@ API keys can be created and managed in the regfish Console at `https://dash.regf
 Install the latest release:
 
 ```sh
-curl -fsSL https://install.certbro.com/rf | sh
+curl -fsSL https://regfish.com/certbro/install.sh | sh
 ```
 
 Install a specific release:
 
 ```sh
-curl -fsSL https://install.certbro.com/rf | CERTBRO_VERSION=v0.1.0 sh
+curl -fsSL https://regfish.com/certbro/install.sh | CERTBRO_VERSION=v0.1.0 sh
 ```
 
 ## Configure
