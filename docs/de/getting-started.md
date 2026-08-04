@@ -18,13 +18,13 @@ API-Keys können in der regfish Console unter `https://dash.regfish.de/my/settin
 Aktuelle Release installieren:
 
 ```sh
-curl -fsSL https://install.certbro.com/rf | sh
+curl -fsSL https://regfish.com/certbro/install.sh | sh
 ```
 
 Bestimmte Release installieren:
 
 ```sh
-curl -fsSL https://install.certbro.com/rf | CERTBRO_VERSION=v0.1.0 sh
+curl -fsSL https://regfish.com/certbro/install.sh | CERTBRO_VERSION=v0.1.0 sh
 ```
 
 ## Konfiguration
